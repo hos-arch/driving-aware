@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>運転環境認識（試作）</title>
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="運転認識">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <video id="cam" playsinline muted autoplay></video>
+  <div class="shade"></div>
+
+  <!-- 開始画面：カメラ・位置情報・画面常時点灯は、ユーザーの操作の後でないと始められない -->
+  <section id="start" class="start">
+    <h1>運転環境認識（試作）</h1>
+    <ul class="notes">
+      <li>研究・試作用のアプリです。<strong>安全装置ではありません。</strong>認識の結果を運転の判断に使わないでください。</li>
+      <li>停車した状態で開始し、ホルダーに固定してから走行してください。運転中は操作・注視をしないでください。</li>
+      <li>カメラ映像と位置情報は端末内だけで処理され、外部へ送信されません。</li>
+      <li>画面をロックしたり他のアプリに切り替えたりすると、カメラと処理は止まります。</li>
+    </ul>
+    <button id="startBtn" class="btn" type="button">開始</button>
+  </section>
+
+  <main id="hud" class="hud" hidden>
+    <section class="speed-block" aria-label="現在速度">
+      <div id="speed" class="speed" data-state="unknown">--</div>
+      <div class="unit">km/h</div>
+      <div id="gpsNote" class="note">GPS 受信待ち</div>
+    </section>
+
+    <section class="limit-block" aria-label="制限速度">
+      <div class="label">制限速度</div>
+      <div id="limit" class="limit">--</div>
+      <div id="limitNote" class="note">未確認（標識の認識は未実装）</div>
+      <div id="overspeed" class="overspeed" hidden>速度超過</div>
+    </section>
+
+    <ul class="status" aria-label="認識状況">
+      <li data-id="lane"><span class="name">車線</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
+      <li data-id="sign"><span class="name">標識</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
+      <li data-id="crosswalk"><span class="name">横断歩道</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
+      <li data-id="pedestrian"><span class="name">歩行者</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
+    </ul>
+
+    <div id="alert" class="alert" role="alert" hidden>
+      <span id="alertText"></span>
+      <button id="retryBtn" class="btn small" type="button" hidden>再試行</button>
+    </div>
+
+    <footer id="sysline" class="sysline">
+      <span id="sysCam" data-level="ng">カメラ 停止</span>
+      <span id="sysGps" data-level="ng">GPS 待ち</span>
+      <span id="sysWake" data-level="ng">常時点灯 無効</span>
+      <span id="sysProc" data-level="ng">処理 停止</span>
+    </footer>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

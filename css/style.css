@@ -1,0 +1,214 @@
+:root {
+  --bg: #000;
+  --fg: #f4f4f4;
+  --dim: #a3a8ad;
+  --detected: #4fe3ff;
+  --unchecked: #ffb020;
+  --over: #ff4d4f;
+  --ok: #3ddc84;
+  --warn: #ffb020;
+  --ng: #ff6b6b;
+  --font: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, "Noto Sans JP", sans-serif;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* カメラ映像は背景。文字が読めるよう暗くする */
+#cam {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+.shade {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,.65), rgba(0,0,0,.25) 45%, rgba(0,0,0,.7));
+  pointer-events: none;
+}
+
+/* 開始画面 */
+.start {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+           max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.94);
+  overflow-y: auto;
+}
+.start h1 { margin: 0; font-size: 1.5rem; }
+.notes { margin: 0; padding-left: 1.2em; line-height: 1.7; color: var(--fg); }
+.notes li + li { margin-top: 6px; }
+.notes strong { color: var(--unchecked); }
+
+.btn {
+  appearance: none;
+  border: 0;
+  border-radius: 14px;
+  background: var(--detected);
+  color: #001015;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 22px 24px;
+  min-height: 64px;
+  width: 100%;
+  max-width: 420px;
+  align-self: center;
+}
+.btn.small {
+  width: auto;
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 1rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 運転画面 */
+.hud {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto 1fr auto auto;
+  gap: 10px;
+  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           max(10px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.speed-block { text-align: center; }
+.speed {
+  font-family: var(--font);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  font-size: clamp(88px, min(34vw, 26vh), 240px);
+  color: var(--fg);
+  text-shadow: 0 0 18px rgba(79, 227, 255, 0.35);
+}
+.speed[data-state="unknown"] { color: var(--dim); text-shadow: none; }
+.speed[data-state="over"] { color: var(--over); text-shadow: 0 0 22px rgba(255, 77, 79, 0.6); }
+.unit { font-family: var(--font); font-size: 1.3rem; color: var(--dim); margin-top: -2px; }
+.note { font-size: 0.95rem; color: var(--dim); margin-top: 4px; }
+
+.limit-block { text-align: center; }
+.limit-block .label { font-size: 1rem; color: var(--dim); }
+.limit {
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: clamp(34px, 9vh, 64px);
+  line-height: 1.1;
+}
+.overspeed {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 6px 18px;
+  border-radius: 10px;
+  background: var(--over);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.4rem;
+}
+
+/* 認識状況：3 つの状態は色だけでなく形でも区別する。
+   「検出されず」は安全の確認ではないので、緑などの安心色は使わない。 */
+.status {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.status li {
+  display: grid;
+  grid-template-columns: 6.5em auto 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.15rem;
+}
+.status .name { font-weight: 700; }
+.status .detail { color: var(--dim); font-size: 0.9rem; }
+.state {
+  display: inline-block;
+  min-width: 7em;
+  text-align: center;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+.state[data-state="detected"] {
+  background: var(--detected);
+  color: #001015;
+}
+.state[data-state="not_detected"] {
+  border: 2px solid var(--fg);
+  color: var(--fg);
+}
+.state[data-state="unchecked"] {
+  border: 2px dashed var(--unchecked);
+  color: var(--unchecked);
+  background: repeating-linear-gradient(135deg, rgba(255,176,32,.14) 0 6px, transparent 6px 12px);
+}
+
+.alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 107, 107, 0.2);
+  border: 1px solid var(--ng);
+  font-size: 1rem;
+}
+
+.sysline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.8rem;
+  color: var(--dim);
+}
+.sysline span::before { content: "● "; }
+.sysline [data-level="ok"]::before { color: var(--ok); }
+.sysline [data-level="warn"]::before { color: var(--warn); }
+.sysline [data-level="ng"]::before { color: var(--ng); }
+
+/* 横向き：左に速度、右に認識状況 */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hud {
+    grid-template-columns: 1.2fr 1fr;
+    grid-template-rows: auto 1fr auto auto;
+    column-gap: 20px;
+  }
+  .speed-block { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+  .limit-block { grid-column: 2; grid-row: 1; }
+  .status { grid-column: 2; grid-row: 2; }
+  .alert { grid-column: 1 / -1; }
+  .sysline { grid-column: 1 / -1; }
+  .speed { font-size: clamp(80px, 38vh, 220px); }
+}

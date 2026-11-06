@@ -1,0 +1,11 @@
+{
+  "name": "driving-aware",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "車内スマホ向け運転環境認識アプリ（研究・試作）",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "start": "python3 -m http.server 8080"
+  }
+}
