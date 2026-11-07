@@ -4,6 +4,8 @@ import { WakeLock } from './wakelock.js';
 import { Pipeline } from './pipeline.js';
 import { createRecognizers, STATES } from './recognizers/index.js';
 import { msToKmh, formatSpeed, isOverspeed, describeGps } from './format.js';
+import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
+import { drawOverlay } from './overlay.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,6 +21,8 @@ const STALL_MS = 2000; // 処理が止まったとみなすまでの時間
 let started = false;
 let camState = 'stopped'; // stopped | starting | ok | <失敗の種類>
 let speedLimitKmh = null; // 標識認識（ステップ3）が入るまで常に null
+let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（幅に対する比）。未設定なら null
+let lastLane = null;
 
 const camera = new Camera($('cam'), {
   onEnded: () => {
@@ -29,7 +33,7 @@ const camera = new Camera($('cam'), {
 });
 const gps = new Gps({ onChange: () => renderAll() });
 const wakeLock = new WakeLock({ onChange: () => renderAll() });
-const recognizers = createRecognizers();
+const recognizers = createRecognizers({ lane: loadLaneConfig() });
 const pipeline = new Pipeline($('cam'), recognizers, {
   onResult: (results) => renderRecognizers(results),
 });
@@ -61,6 +65,33 @@ function renderRecognizers(results) {
     stateEl.dataset.state = res.state;
     stateEl.textContent = STATE_TEXT[res.state] ?? STATE_TEXT[STATES.UNCHECKED];
     row.querySelector('.detail').textContent = res.detail ? `（${res.detail}）` : '';
+  }
+  renderLane(results.lane ? results.lane.lane : null);
+}
+
+// 車線: 映像への重ね描きと、車線内の位置
+function renderLane(lane) {
+  lastLane = lane;
+  const both = !!(lane && lane.left && lane.right);
+  const carX = both && refDx != null ? (0.5 + refDx) * lane.frameW : null;
+  drawOverlay($('overlay'), $('cam'), lane, carX);
+
+  const dot = $('laneDot');
+  const text = $('lanePosText');
+  $('calBtn').disabled = !both;
+  dot.hidden = true;
+  if (!lane || (!lane.left && !lane.right)) {
+    text.textContent = '位置 未確認';
+  } else if (!both) {
+    text.textContent = '位置 未確認（片側のみ）';
+  } else if (refDx == null) {
+    text.textContent = '位置 基準未設定';
+  } else {
+    const pos = (carX - lane.left.xb) / (lane.right.xb - lane.left.xb);
+    dot.hidden = false;
+    dot.style.left = `${Math.min(1, Math.max(0, pos)) * 100}%`;
+    const off = Math.round((pos - 0.5) * 100);
+    text.textContent = Math.abs(off) < 3 ? '位置 中央' : `位置 中央から${off < 0 ? '左' : '右'}へ ${Math.abs(off)}%`;
   }
 }
 
@@ -159,6 +190,15 @@ $('startBtn').addEventListener('click', () => {
 
 $('retryBtn').addEventListener('click', () => {
   startCamera();
+});
+
+// 「いま車が車線の中央にいる」として、自車の位置の基準を決める（停車して行う）
+$('calBtn').addEventListener('click', () => {
+  const lane = lastLane;
+  if (!(lane && lane.left && lane.right)) return;
+  refDx = (lane.left.xb + lane.right.xb) / 2 / lane.frameW - 0.5;
+  setRefDx(refDx);
+  renderLane(lane);
 });
 
 document.addEventListener('visibilitychange', () => {

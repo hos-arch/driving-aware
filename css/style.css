@@ -86,6 +86,16 @@ html, body {
   flex-shrink: 0;
 }
 
+/* カメラ映像への重ね描き */
+#overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* 運転画面 */
 .hud {
   position: fixed;
@@ -93,13 +103,14 @@ html, body {
   z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: auto auto 1fr auto auto;
+  /* 行 3 は空き。カメラに写る道路（画面の中ほど）に文字を重ねないための余白 */
+  grid-template-rows: auto auto 1fr auto auto auto auto;
   gap: 10px;
   padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
            max(10px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 
-.speed-block { text-align: center; }
+.speed-block { text-align: center; grid-row: 1; }
 .speed {
   font-family: var(--font);
   font-weight: 800;
@@ -114,7 +125,7 @@ html, body {
 .unit { font-family: var(--font); font-size: 1.3rem; color: var(--dim); margin-top: -2px; }
 .note { font-size: 0.95rem; color: var(--dim); margin-top: 4px; }
 
-.limit-block { text-align: center; }
+.limit-block { text-align: center; grid-row: 2; }
 .limit-block .label { font-size: 1rem; color: var(--dim); }
 .limit {
   font-family: var(--font);
@@ -142,6 +153,7 @@ html, body {
   display: grid;
   gap: 8px;
   align-content: start;
+  grid-row: 4;
 }
 .status li {
   display: grid;
@@ -174,7 +186,56 @@ html, body {
   background: repeating-linear-gradient(135deg, rgba(255,176,32,.14) 0 6px, transparent 6px 12px);
 }
 
+/* 車線内の位置 */
+.lanepos { display: grid; gap: 6px; grid-row: 5; }
+.lanebar { position: relative; height: 20px; }
+.lanebar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.35);
+}
+.lanebar .edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--detected);
+}
+.lanebar .edge.l { left: 0; }
+.lanebar .edge.r { right: 0; }
+.lanebar i {
+  position: absolute;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: #fff;
+}
+.lanerow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 1rem;
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--dim);
+  font-size: 0.85rem;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.btn.ghost:disabled { opacity: 0.35; }
+
 .alert {
+  grid-row: 6;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -187,6 +248,7 @@ html, body {
 }
 
 .sysline {
+  grid-row: 7;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
@@ -202,13 +264,27 @@ html, body {
 @media (orientation: landscape) and (max-height: 520px) {
   .hud {
     grid-template-columns: 1.2fr 1fr;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto 1fr auto auto auto;
     column-gap: 20px;
   }
   .speed-block { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
   .limit-block { grid-column: 2; grid-row: 1; }
   .status { grid-column: 2; grid-row: 2; }
-  .alert { grid-column: 1 / -1; }
-  .sysline { grid-column: 1 / -1; }
+  .lanepos { grid-column: 2; grid-row: 3; }
+  .alert { grid-column: 1 / -1; grid-row: 4; }
+  .sysline { grid-column: 1 / -1; grid-row: 5; }
   .speed { font-size: clamp(80px, 38vh, 220px); }
+  /* 横向きは縦が短いので、行間・余白を詰める */
+  .hud { gap: 6px; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .limit { font-size: 28px; }
+  .limit-block .note { display: none; }
+  .status { gap: 4px; }
+  .status li { font-size: 1rem; }
+  .state { padding: 3px 10px; min-width: 6.5em; }
+  .lanebar { height: 14px; }
+  .lanebar i { top: 0; }
+  .lanerow { font-size: 0.9rem; }
+  .btn.ghost { min-height: 30px; padding: 3px 10px; }
+  .alert { padding: 6px 12px; font-size: 0.85rem; }
+  .sysline { font-size: 0.72rem; }
 }

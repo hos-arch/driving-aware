@@ -65,7 +65,7 @@ export class Pipeline {
       width: w,
       height: h,
       timestamp: now,
-      getImageData: () => this.ctx.getImageData(0, 0, w, h),
+      getImageData: (x = 0, y = 0, rw = w, rh = h) => this.ctx.getImageData(x, y, rw, rh),
     };
 
     const results = {};

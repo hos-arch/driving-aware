@@ -17,6 +17,7 @@
 <body>
   <video id="cam" playsinline muted autoplay></video>
   <div class="shade"></div>
+  <canvas id="overlay" aria-hidden="true"></canvas>
 
   <!-- 開始画面：カメラ・位置情報・画面常時点灯は、ユーザーの操作の後でないと始められない -->
   <section id="start" class="start">
@@ -45,11 +46,19 @@
     </section>
 
     <ul class="status" aria-label="認識状況">
-      <li data-id="lane"><span class="name">車線</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
+      <li data-id="lane"><span class="name">車線</span><span class="state" data-state="unchecked">未確認</span><span class="detail">（準備中）</span></li>
       <li data-id="sign"><span class="name">標識</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
       <li data-id="crosswalk"><span class="name">横断歩道</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
       <li data-id="pedestrian"><span class="name">歩行者</span><span class="state" data-state="unchecked">未確認</span><span class="detail"></span></li>
     </ul>
+
+    <div class="lanepos" aria-label="車線内の位置">
+      <div class="lanebar" aria-hidden="true"><span class="edge l"></span><span class="edge r"></span><i id="laneDot" hidden></i></div>
+      <div class="lanerow">
+        <span id="lanePosText">位置 未確認</span>
+        <button id="calBtn" class="btn small ghost" type="button" disabled>中央合わせ</button>
+      </div>
+    </div>
 
     <div id="alert" class="alert" role="alert" hidden>
       <span id="alertText"></span>
