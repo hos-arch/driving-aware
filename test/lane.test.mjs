@@ -197,3 +197,82 @@ test('暗すぎる映像は「検出されず」ではなく「未確認」', ()
   assert.equal(r.state, STATES.UNCHECKED);
   assert.match(r.detail, /暗/);
 });
+
+// --- 黄色い線・横向きの映像 ------------------------------------------------------
+import { laneGeometryFor } from '../js/recognizers/lane.js';
+import { LANE_LANDSCAPE } from '../js/recognizers/lane-core.js';
+
+test('黄色い線（センターライン）は、色が濃くても車線として残す', () => {
+  const roi = makeRoi();
+  drawLaneLine(roi, 280);
+  drawLaneLine(roi, 520, 10, [235, 195, 40]);
+  const { pick } = run(roi);
+  assert.ok(pick.right, '黄色い右の線が検出される');
+  assert.equal(pick.right.color, 'yellow');
+  assert.ok(pick.left);
+  assert.equal(pick.left.color, 'white');
+});
+
+test('オレンジ寄りの赤（信号の反射など）は、黄色として扱わない', () => {
+  const roi = makeRoi();
+  drawLaneLine(roi, 520, 10, [255, 90, 30]);
+  const { pick } = run(roi);
+  assert.equal(pick.right, null);
+});
+
+test('向きに応じて探索範囲を選ぶ。指定があればそれを優先', () => {
+  assert.deepEqual(laneGeometryFor(640, 360).roi, LANE_LANDSCAPE.roi);
+  assert.equal(laneGeometryFor(640, 360).landscape, true);
+  assert.deepEqual(laneGeometryFor(640, 1138).roi, LANE_DEFAULTS.roi);
+  assert.deepEqual(laneGeometryFor(640, 360, { roi: [0.3, 0.6] }).roi, [0.3, 0.6]);
+});
+
+/** 画面全体（横向き）の合成フレーム */
+function makeFullFrame(W, H, bg = 40) {
+  const rgba = new Uint8ClampedArray(W * H * 4);
+  let seed = 777;
+  for (let i = 0; i < W * H; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const v = bg + (seed % 7) - 3;
+    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = v;
+    rgba[i * 4 + 3] = 255;
+  }
+  return { rgba, W, H };
+}
+
+function drawAbs(f, x0, y0, x1, y1, thick, color = [235, 235, 235]) {
+  const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy, half = thick / 2;
+  for (let y = 0; y < f.H; y++) {
+    for (let x = 0; x < f.W; x++) {
+      let t = ((x - x0) * dx + (y - y0) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      if (Math.hypot(x - (x0 + t * dx), y - (y0 + t * dy)) <= half) {
+        const i = (y * f.W + x) * 4;
+        f.rgba[i] = color[0]; f.rgba[i + 1] = color[1]; f.rgba[i + 2] = color[2];
+      }
+    }
+  }
+}
+
+test('横向きの映像（640×360）でも、細く短く写る線を検出する', () => {
+  const W = 640, H = 360;
+  const f = makeFullFrame(W, H);
+  const vpx = LANE_LANDSCAPE.vp[0] * W, vpy = LANE_LANDSCAPE.vp[1] * H;
+  const yb = LANE_LANDSCAPE.roi[1] * H;
+  for (const xb of [200, 450]) {
+    // 下端から消失点までの 40% の位置まで描く（横向きなので太さ 6px）
+    drawAbs(f, xb + (vpx - xb) * 0.4, yb + (vpy - yb) * 0.4, xb, yb, 6);
+  }
+  const rec = createLaneRecognizer();
+  const frame = (t) => ({
+    width: W, height: H, timestamp: t,
+    getImageData: (x, y, w, h) => ({ data: f.rgba.subarray(y * W * 4, (y + h) * W * 4), width: w, height: h }),
+  });
+  let r;
+  for (let i = 0; i < 6; i++) r = rec.process(frame(i * 100));
+  assert.equal(r.state, STATES.DETECTED, JSON.stringify(r.detail));
+  assert.equal(r.detail, '両側');
+  assert.ok(Math.abs(r.lane.left.xb - 200) < 20, `左 xb=${r.lane.left.xb}`);
+  assert.ok(Math.abs(r.lane.right.xb - 450) < 20, `右 xb=${r.lane.right.xb}`);
+  assert.deepEqual(r.lane.roi, [Math.floor(0.45 * H), Math.floor(0.75 * H)]);
+});

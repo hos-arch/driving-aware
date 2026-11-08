@@ -4,9 +4,10 @@
 //   1. 道路が写る帯（ROI）だけを見る。ダッシュボードや空は見ない。
 //   2. 周りより明るい細長い塊を、白線の候補として取り出す。
 //   3. 車線は遠くの 1 点（消失点）に向かって収束する。向きが合わない塊（路面の反射、窓枠など）は捨てる。
-//   4. 赤・緑などの強い光の反射は、色の濃さで捨てる。
+//   4. 赤・緑などの強い光の反射は、色の濃さで捨てる。ただし黄色い線（センターライン等）は残す。
 //
-// 長さなどの閾値は「幅 640px の画像」を基準に書き、実際の幅に合わせて拡縮する。
+// 長さなどの閾値は「短い辺が 640px の画像」を基準に書き、実際の大きさに合わせて拡縮する。
+// （横向きの映像は同じ幅に広い範囲が写り、線が小さく見えるため、幅ではなく短い辺で合わせる）
 
 export const LANE_DEFAULTS = Object.freeze({
   roi: [0.40, 0.535], // 画面の高さに対する探索範囲（上端, 下端）
@@ -20,6 +21,15 @@ export const LANE_DEFAULTS = Object.freeze({
   nearFrac: 0.35, // ROI の上側 35% にある候補は遠すぎるので使わない
   xbRange: [-0.10, 1.10], // ROI 下端で線が交わる位置（幅に対する比）の許容範囲
   minLuma: 15, // ROI の平均輝度がこれ未満なら暗すぎて判定しない
+  yellowHue: [44, 68], // 黄色とみなす色相（度）。街灯に照らされた草や縁石（40°前後）は含めない
+  yellowMinSat: 0.4, // 黄色とみなす画素の彩度の下限
+  yellowFrac: 0.5, // 塊のうち黄色の画素がこの割合以上なら、色が濃くても黄色い線として残す
+});
+
+/** 横向きに固定したときの既定値（縦向きの既定値は LANE_DEFAULTS.roi / vp） */
+export const LANE_LANDSCAPE = Object.freeze({
+  roi: [0.45, 0.75],
+  vp: [0.50, 0.46],
 });
 
 const BASE_W = 640;
@@ -105,7 +115,7 @@ function morph(src, w, h, kw, kh, erode) {
  * @returns { cands, rej, meanLuma, vp, w, h }  座標は ROI 内（x: 0..w, y: 0..h）
  */
 export function findLaneCandidates(rgba, w, h, ctx, o = LANE_DEFAULTS) {
-  const s = w / BASE_W;
+  const s = Math.min(w, ctx.frameH) / BASE_W;
   const n = w * h;
   const vpx = o.vp[0] * w;
   const vpy = o.vp[1] * ctx.frameH - ctx.y0;
@@ -166,7 +176,7 @@ export function findLaneCandidates(rgba, w, h, ctx, o = LANE_DEFAULTS) {
     let sp = 0;
     stack[sp++] = start;
     label[start] = 1;
-    let m = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, satSum = 0;
+    let m = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, satSum = 0, yellowN = 0;
     let minx = w, miny = h, maxx = 0, maxy = 0;
     while (sp) {
       const idx = stack[--sp];
@@ -182,7 +192,15 @@ export function findLaneCandidates(rgba, w, h, ctx, o = LANE_DEFAULTS) {
       const r = rgba[p], gg = rgba[p + 1], b = rgba[p + 2];
       const mx = r > gg ? (r > b ? r : b) : gg > b ? gg : b;
       const mn = r < gg ? (r < b ? r : b) : gg < b ? gg : b;
-      satSum += mx ? (mx - mn) / mx : 0;
+      const ps = mx ? (mx - mn) / mx : 0;
+      satSum += ps;
+      if (ps > o.yellowMinSat) {
+        const dl = mx - mn;
+        let hue = mx === r ? ((gg - b) / dl) % 6 : mx === gg ? (b - r) / dl + 2 : (r - gg) / dl + 4;
+        hue *= 60;
+        if (hue < 0) hue += 360;
+        if (hue >= o.yellowHue[0] && hue <= o.yellowHue[1]) yellowN++;
+      }
       for (let dy = -1; dy <= 1; dy++) {
         const yy = y + dy;
         if (yy < 0 || yy >= h) continue;
@@ -214,7 +232,8 @@ export function findLaneCandidates(rgba, w, h, ctx, o = LANE_DEFAULTS) {
     if (L < o.minLen * s || L / T < o.minAspect) { out.rej.shape++; continue; }
 
     const sat = satSum / m;
-    if (sat > o.maxSat) { out.rej.sat++; continue; }
+    const yellow = yellowN / m >= o.yellowFrac;
+    if (sat > o.maxSat && !yellow) { out.rej.sat++; continue; }
     if (cx < 0.03 * w || cx > 0.97 * w) { out.rej.edge++; continue; }
 
     const theta = ((0.5 * Math.atan2(2 * b2, a - c) * 180) / Math.PI + 180) % 180;
@@ -226,7 +245,7 @@ export function findLaneCandidates(rgba, w, h, ctx, o = LANE_DEFAULTS) {
     if (cy < o.nearFrac * h) { out.rej.far++; continue; }
 
     const xb = cx + ((yb - cy) * (vpx - cx)) / (vpy - cy);
-    out.cands.push({ L, cx, cy, xb, sat, box: [minx, miny, maxx, maxy] });
+    out.cands.push({ L, cx, cy, xb, sat, color: yellow ? 'yellow' : 'white', box: [minx, miny, maxx, maxy] });
   }
   return out;
 }

@@ -6,7 +6,7 @@
 //   unchecked    : 暗すぎるなど、判定できる映像ではない
 
 import { STATES } from './states.js';
-import { LANE_DEFAULTS, findLaneCandidates, pickEgoBoundaries } from './lane-core.js';
+import { LANE_DEFAULTS, LANE_LANDSCAPE, findLaneCandidates, pickEgoBoundaries } from './lane-core.js';
 
 const BASE_W = 640;
 
@@ -30,7 +30,7 @@ export class LaneTracker {
     this.active = { left: false, right: false };
   }
 
-  /** @param t ミリ秒 @param w 画像の幅（px） */
+  /** @param t ミリ秒 @param w 閾値の縮尺に使う長さ（画像の短い辺, px） */
   update(t, left, right, w) {
     this.history.push({ t, left: left ? left.xb : null, right: right ? right.xb : null });
     while (this.history.length && t - this.history[0].t > this.windowMs) this.history.shift();
@@ -61,14 +61,36 @@ export class LaneTracker {
   }
 }
 
+/**
+ * 映像の向きに合わせて探索範囲と消失点を選ぶ。URL などで指定された値があれば、それを優先する。
+ */
+export function laneGeometryFor(frameW, frameH, options = {}) {
+  const landscape = frameW > frameH;
+  return {
+    landscape,
+    roi: options.roi ?? (landscape ? LANE_LANDSCAPE.roi : LANE_DEFAULTS.roi),
+    vp: options.vp ?? (landscape ? LANE_LANDSCAPE.vp : LANE_DEFAULTS.vp),
+  };
+}
+
 export function createLaneRecognizer(options = {}) {
-  const o = { ...LANE_DEFAULTS, ...options };
+  const base = { ...LANE_DEFAULTS, ...options };
   const tracker = new LaneTracker(options.tracker);
+  let lastDims = '';
 
   return {
     id: 'lane',
     label: '車線',
     process(frame) {
+      // 向きや大きさが変わったら、過去の位置は使えないので捨てる
+      const dims = `${frame.width}x${frame.height}`;
+      if (dims !== lastDims) {
+        tracker.reset();
+        lastDims = dims;
+      }
+      const geo = laneGeometryFor(frame.width, frame.height, options);
+      const o = { ...base, roi: geo.roi, vp: geo.vp };
+
       const y0 = Math.floor(o.roi[0] * frame.height);
       const y1 = Math.floor(o.roi[1] * frame.height);
       const h = y1 - y0;
@@ -88,11 +110,11 @@ export function createLaneRecognizer(options = {}) {
       }
 
       const { left, right } = pickEgoBoundaries(res, o);
-      const tr = tracker.update(frame.timestamp, left, right, w);
+      const tr = tracker.update(frame.timestamp, left, right, Math.min(w, frame.height));
       const out = {
         ...geometry,
-        left: tr.left.detected ? { xb: tr.left.xb } : null,
-        right: tr.right.detected ? { xb: tr.right.xb } : null,
+        left: tr.left.detected ? { xb: tr.left.xb, color: left?.color ?? null } : null,
+        right: tr.right.detected ? { xb: tr.right.xb, color: right?.color ?? null } : null,
       };
 
       if (out.left && out.right) return { state: STATES.DETECTED, detail: '両側', lane: out };
