@@ -70,6 +70,15 @@ test('赤い逆三角（中が白い）→ 赤い逆三角', () => {
   assert.deepEqual(kinds(img), ['red-triangle']);
 });
 
+test('雨でぼけた薄い赤（色相 349°、彩度 0.45）の逆三角 → 赤い逆三角', () => {
+  const img = makeImage();
+  const PALE_RED = [140, 77, 88];
+  const tri = (k) => (x, y) => y >= -1 && y <= 1 && Math.abs(x) <= k * (1 - y) / 2;
+  paint(img, 300, 150, 45, tri(1), PALE_RED);
+  paint(img, 300, 150, 45, (x, y) => tri(0.62)(x, y + 0.12) && y >= -0.8, WHITE);
+  assert.deepEqual(kinds(img), ['red-triangle']);
+});
+
 test('黄色（橙色寄り）のひし形 → 黄色いひし形', () => {
   const img = makeImage();
   paint(img, 300, 150, 45, (x, y) => Math.abs(x) + Math.abs(y) <= 1, YELLOW);

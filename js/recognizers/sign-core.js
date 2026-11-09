@@ -14,7 +14,8 @@ export const SIGN_DEFAULTS = {
   minSide: 14, // 候補の最小の辺（基準幅での px）
   maxFrac: 0.22, // 候補の最大の辺（画像の幅に対する比）
   vMin: 0.28, // これより暗い画素は色を見ない
-  redSat: 0.55,
+  redHue: [8, 336], // 赤は、この角度以下か以上。雨でぼけた標識は、薄く（色相 346〜350°、彩度 0.45）写る
+  redSat: 0.38,
   blueSat: 0.55,
   yellowHue: [28, 62], // 雨・曇りの黄色い標識は、橙色寄りに写る（色相 31〜44° を実測）
   yellowSat: 0.45,
@@ -218,14 +219,14 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
     const d = mx - mn;
     if (d === 0) continue;
     const sat = d / mx;
-    if (sat < 0.5) continue;
+    if (sat < o.redSat) continue;
     let hue;
     if (mx === r) hue = ((g - b) / d) % 6;
     else if (mx === g) hue = (b - r) / d + 2;
     else hue = (r - g) / d + 4;
     hue *= 60;
     if (hue < 0) hue += 360;
-    if ((hue <= 14 || hue >= 346) && sat >= o.redSat) cls[i] = RED;
+    if ((hue <= o.redHue[0] || hue >= o.redHue[1]) && sat >= o.redSat) cls[i] = RED;
     else if (hue >= 205 && hue <= 245 && sat >= o.blueSat) cls[i] = BLUE;
     else if (hue >= o.yellowHue[0] && hue <= o.yellowHue[1] && sat >= o.yellowSat && mx >= o.yellowVMin * 255) cls[i] = YELLOW;
   }
