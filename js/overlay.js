@@ -2,8 +2,46 @@
 // video は object-fit: cover で表示しているので、同じ変換で座標を合わせる。
 
 const LINE_COLOR = '#4fe3ff';
+const SIGN_COLORS = {
+  'red-circle': '#ff5a4f',
+  'red-triangle': '#ff5af0',
+  'yellow-diamond': '#ffd23f',
+  'blue-sign': '#4da3ff',
+};
 
-export function drawOverlay(canvas, video, lane, carX) {
+// 標識の候補（色と形だけ。意味は判定していない）。映像全体に対する比で位置が来る。
+// 画面の左右の端の細い帯は、標識を探している高さを示す（それ以外の高さは見ていない）。
+function drawSigns(ctx, signs, ox, oy, dw, dh, cw) {
+  if (!signs) return;
+  const top = oy + signs.band[0] * dh;
+  const bottom = oy + signs.band[1] * dh;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.fillRect(0, top, 3, bottom - top);
+  ctx.fillRect(cw - 3, top, 3, bottom - top);
+  ctx.lineWidth = 3;
+  ctx.font = '600 12px system-ui, sans-serif';
+  ctx.textBaseline = 'bottom';
+  for (const it of signs.items) {
+    const x = ox + it.x * dw;
+    const y = oy + it.y * dh;
+    const w = it.w * dw;
+    const h = it.h * dh;
+    ctx.strokeStyle = SIGN_COLORS[it.kind] ?? '#ffffff';
+    ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+    const text = `${it.label}（候補）`;
+    const tw = ctx.measureText(text).width + 8;
+    const tx = Math.min(Math.max(0, x - 3), cw - tw);
+    const ty = Math.max(16, y - 5);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(tx, ty - 16, tw, 16);
+    ctx.fillStyle = SIGN_COLORS[it.kind] ?? '#ffffff';
+    ctx.fillText(text, tx + 4, ty - 1);
+  }
+  ctx.restore();
+}
+
+export function drawOverlay(canvas, video, lane, carX, signs) {
   const dpr = window.devicePixelRatio || 1;
   const cw = canvas.clientWidth;
   const ch = canvas.clientHeight;
@@ -14,13 +52,15 @@ export function drawOverlay(canvas, video, lane, carX) {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cw, ch);
-  if (!lane || !video.videoWidth || !video.videoHeight) return;
+  if (!video.videoWidth || !video.videoHeight) return;
 
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   const sc = Math.max(cw / vw, ch / vh);
   const ox = (cw - vw * sc) / 2;
   const oy = (ch - vh * sc) / 2;
+  drawSigns(ctx, signs, ox, oy, vw * sc, vh * sc, cw);
+  if (!lane) return;
   const mx = (fx) => ox + (fx / lane.frameW) * vw * sc;
   const my = (fy) => oy + (fy / lane.frameH) * vh * sc;
 

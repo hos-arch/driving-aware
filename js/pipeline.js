@@ -3,7 +3,7 @@
 import { STATES } from './recognizers/index.js';
 
 const TARGET_INTERVAL_MS = 100; // 最大 約10fps
-const PROCESS_WIDTH = 640; // 認識用に縮小する幅
+const PROCESS_WIDTH = 640; // 認識用に縮小する幅（標識は getRegion でもっと高い解像度の一部を取る）
 
 export class Pipeline {
   constructor(video, recognizers, { onResult } = {}) {
@@ -18,6 +18,25 @@ export class Pipeline {
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
     this.handle = null;
+    this.regionCanvas = document.createElement('canvas');
+    this.regionCtx = this.regionCanvas.getContext('2d', { willReadFrequently: true });
+  }
+
+  /** 映像の高さの y0f〜y1f（0〜1）の帯を、幅 outW（映像の幅を超えない）で取り出す。標識など小さいものを見る用 */
+  getRegion(y0f, y1f, outW) {
+    const v = this.video;
+    const vw = v.videoWidth;
+    const vh = v.videoHeight;
+    const sy = Math.round(y0f * vh);
+    const sh = Math.max(1, Math.round((y1f - y0f) * vh));
+    const dw = Math.min(outW, vw);
+    const dh = Math.max(1, Math.round((sh * dw) / vw));
+    if (this.regionCanvas.width !== dw || this.regionCanvas.height !== dh) {
+      this.regionCanvas.width = dw;
+      this.regionCanvas.height = dh;
+    }
+    this.regionCtx.drawImage(v, 0, sy, vw, sh, 0, 0, dw, dh);
+    return this.regionCtx.getImageData(0, 0, dw, dh);
   }
 
   start() {
@@ -66,6 +85,7 @@ export class Pipeline {
       height: h,
       timestamp: now,
       getImageData: (x = 0, y = 0, rw = w, rh = h) => this.ctx.getImageData(x, y, rw, rh),
+      getRegion: (y0f, y1f, outW) => this.getRegion(y0f, y1f, outW),
     };
 
     const results = {};

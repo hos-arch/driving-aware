@@ -23,6 +23,7 @@ let camState = 'stopped'; // stopped | starting | ok | <失敗の種類>
 let speedLimitKmh = null; // 標識認識（ステップ3）が入るまで常に null
 let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（幅に対する比）。未設定なら null
 let lastLane = null;
+let lastSigns = null;
 
 const camera = new Camera($('cam'), {
   onEnded: () => {
@@ -51,7 +52,7 @@ function renderSpeed() {
 
   $('limit').textContent = speedLimitKmh == null ? '--' : String(speedLimitKmh);
   $('limitNote').textContent =
-    speedLimitKmh == null ? '未確認（標識の認識は未実装）' : '認識した速度標識';
+    speedLimitKmh == null ? '未確認（速度標識の数字は読めません）' : '認識した速度標識';
 
   return desc;
 }
@@ -66,6 +67,7 @@ function renderRecognizers(results) {
     stateEl.textContent = STATE_TEXT[res.state] ?? STATE_TEXT[STATES.UNCHECKED];
     row.querySelector('.detail').textContent = res.detail ? `（${res.detail}）` : '';
   }
+  lastSigns = results.sign ? results.sign.sign : null;
   renderLane(results.lane ? results.lane.lane : null);
 }
 
@@ -74,7 +76,7 @@ function renderLane(lane) {
   lastLane = lane;
   const both = !!(lane && lane.left && lane.right);
   const carX = both && refDx != null ? (0.5 + refDx) * lane.frameW : null;
-  drawOverlay($('overlay'), $('cam'), lane, carX);
+  drawOverlay($('overlay'), $('cam'), lane, carX, lastSigns);
 
   const dot = $('laneDot');
   const text = $('lanePosText');
