@@ -105,7 +105,7 @@ function setSys(id, level, text) {
 
 function renderSys(gpsDesc) {
   // カメラ
-  if (camState === 'ok' && camera.live) setSys('sysCam', 'ok', 'カメラ 動作中');
+  if (camState === 'ok' && camera.live) setSys('sysCam', 'ok', `カメラ ${camera.sizeText || '動作中'}`);
   else if (camState === 'starting') setSys('sysCam', 'warn', 'カメラ 起動中');
   else if (camState === 'stopped') setSys('sysCam', 'ng', 'カメラ 停止');
   else if (camState === 'ok') setSys('sysCam', 'ng', 'カメラ 停止');

@@ -45,6 +45,24 @@ export class Camera {
     this.stream = null;
   }
 
+  /**
+   * 届いている映像の大きさと、このカメラが出せる最大の大きさ（分かる場合）を、表示用の文字で返す。
+   * 例: "1280×720（最大 3840×2160）"
+   */
+  get sizeText() {
+    const w = this.video.videoWidth;
+    const h = this.video.videoHeight;
+    if (!w || !h) return '';
+    let max = '';
+    try {
+      const cap = this.stream?.getVideoTracks()[0]?.getCapabilities?.();
+      if (cap?.width?.max && cap?.height?.max) max = `（最大 ${cap.width.max}×${cap.height.max}）`;
+    } catch {
+      // 対応していないブラウザでは、最大は表示しない
+    }
+    return `${w}×${h}${max}`;
+  }
+
   /** 映像が流れている状態か */
   get live() {
     const track = this.stream?.getVideoTracks()[0];
