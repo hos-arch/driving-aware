@@ -79,6 +79,32 @@ test('雨でぼけた薄い赤（色相 349°、彩度 0.45）の逆三角 → �
   assert.deepEqual(kinds(img), ['red-triangle']);
 });
 
+test('明るい曇りで薄く写った赤い輪（色相 335°、彩度 0.3）→ 赤い丸。中の青い数字は別の候補にしない', () => {
+  const img = makeImage([225, 238, 240]);
+  const PALE = [200, 140, 165];
+  const PALE_BLUE = [110, 170, 200]; // 色相 200°、彩度 0.45
+  paint(img, 300, 150, 40, (x, y) => x * x + y * y <= 1, PALE);
+  paint(img, 300, 150, 40, (x, y) => x * x + y * y <= 0.55, WHITE);
+  paint(img, 300, 150, 40, (x, y) => Math.abs(x) <= 0.4 && Math.abs(y) <= 0.3, PALE_BLUE);
+  paint(img, 300, 150, 40, (x, y) => Math.abs(x) <= 0.25 && Math.abs(y) <= 0.15, WHITE);
+  assert.deepEqual(kinds(img), ['red-circle']);
+});
+
+test('赤い輪の中が青い標識（駐車禁止の形）→ 赤い丸だけ（青い標識にはしない）', () => {
+  const img = makeImage();
+  paint(img, 300, 150, 40, (x, y) => x * x + y * y <= 1, RED);
+  paint(img, 300, 150, 40, (x, y) => x * x + y * y <= 0.6, BLUE);
+  paint(img, 300, 150, 40, (x, y) => Math.abs(x + y) <= 0.16 && x * x + y * y <= 1, RED);
+  assert.deepEqual(kinds(img), ['red-circle']);
+});
+
+test('薄く水色寄りに写った青い四角（色相 200°、彩度 0.45）→ 青い標識', () => {
+  const img = makeImage([225, 238, 240]);
+  paint(img, 400, 120, 60, (x, y) => Math.abs(x) <= 1 && Math.abs(y) <= 0.7, [110, 170, 200]);
+  paint(img, 400, 120, 60, (x, y) => Math.abs(x) <= 0.7 && Math.abs(y - 0.1) <= 0.12, WHITE);
+  assert.deepEqual(kinds(img), ['blue-sign']);
+});
+
 test('黄色（橙色寄り）のひし形 → 黄色いひし形', () => {
   const img = makeImage();
   paint(img, 300, 150, 45, (x, y) => Math.abs(x) + Math.abs(y) <= 1, YELLOW);
@@ -221,5 +247,12 @@ test('認識モジュール: 前回から 300ms 未満なら再計算せず、�
 test('認識モジュール: 暗い映像・映像が取れないときは「未確認」（「検出されず」にしない）', () => {
   const dark = makeImage([5, 5, 5]);
   assert.equal(createSignRecognizer().process(frameFrom(dark, 0)).state, STATES.UNCHECKED);
+  // 夜（空が黒く、範囲の平均が暗い）は、灯りを標識と間違えやすいので判定しない
+  const night = makeImage([40, 40, 45]);
+  paint(night, 300, 150, 40, (x, y) => x * x + y * y <= 1, RED);
+  paint(night, 300, 150, 40, (x, y) => x * x + y * y <= 0.62, WHITE);
+  const rn = createSignRecognizer();
+  rn.process(frameFrom(night, 0));
+  assert.equal(rn.process(frameFrom(night, 400)).state, STATES.UNCHECKED);
   assert.equal(createSignRecognizer().process(frameFrom(makeImage(), 0, false)).state, STATES.UNCHECKED);
 });

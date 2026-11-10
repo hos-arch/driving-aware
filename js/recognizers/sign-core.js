@@ -14,14 +14,18 @@ export const SIGN_DEFAULTS = {
   minSide: 14, // 候補の最小の辺（基準幅での px）
   maxFrac: 0.22, // 候補の最大の辺（画像の幅に対する比）
   vMin: 0.28, // これより暗い画素は色を見ない
-  redHue: [8, 336], // 赤は、この角度以下か以上。雨でぼけた標識は、薄く（色相 346〜350°、彩度 0.45）写る
-  redSat: 0.38,
-  blueSat: 0.55,
+  // 色の基準は、雨の日（濃く写る）と、明るい曇りの日（白っぽく薄く写る）の両方の映像で決めた。
+  redHue: [8, 325], // 赤は、この角度以下か以上。薄く写ると紫寄り（色相 330〜350°、彩度 0.3〜0.45）になる
+  redSat: 0.28,
+  blueHue: [188, 245], // 薄く写ると水色寄り（色相 190〜200°）になる
+  blueSat: 0.35,
   yellowHue: [28, 62], // 雨・曇りの黄色い標識は、橙色寄りに写る（色相 31〜44° を実測）
-  yellowSat: 0.45,
+  yellowSat: 0.35,
   yellowVMin: 0.35,
   gap: 5, // 同じ色の間のこの幅（基準幅での px）までの隙間は埋める
-  minLuma: 15, // 範囲の平均輝度がこれ未満なら暗くて判定不可
+  // 範囲の平均輝度がこれ未満なら、暗くて判定不可。昼の映像（雨を含む 27 本）は 124 以上だった。
+  // 夜は空が黒く、灯りや反射を標識と間違えやすいので、色と形だけの判定は行わない。
+  minLuma: 60,
 };
 
 export const SIGN_KINDS = {
@@ -66,10 +70,15 @@ function fillGaps(cls, w, h, g) {
 }
 
 /** 1 つの塊（画素の集まり）の形を調べる。形が合えば種類を返し、合わなければ null。 */
-function whiteFraction(rgba, w, x0, y0, bw, bh) {
+function whiteFraction(rgba, w, x0, y0, bw, bh, cls = null) {
   let white = 0;
   for (let y = y0; y < y0 + bh; y++) {
     for (let x = x0; x < x0 + bw; x++) {
+      // 赤い輪の中が青い標識（駐車禁止など）は、青も「中身」として数える
+      if (cls && cls[y * w + x] === BLUE) {
+        white++;
+        continue;
+      }
       const p = (y * w + x) * 4;
       const r = rgba[p];
       const g = rgba[p + 1];
@@ -80,6 +89,31 @@ function whiteFraction(rgba, w, x0, y0, bw, bh) {
     }
   }
   return white / (bw * bh);
+}
+
+/**
+ * 青い塊が、赤い輪の内側にあるか（制限速度の青い数字、駐車禁止の青い地）。
+ * 塊の中心から 8 方向に進み、塊の大きさの 1.5 倍までに赤に当たる方向が 6 つ以上なら内側とみなす。
+ */
+function insideRed(cls, w, h, x0, y0, bw, bh) {
+  const cx = x0 + bw / 2;
+  const cy = y0 + bh / 2;
+  const reach = Math.max(bw, bh) * 1.5;
+  let hit = 0;
+  for (let k = 0; k < 8; k++) {
+    const dx = Math.cos((k * Math.PI) / 4);
+    const dy = Math.sin((k * Math.PI) / 4);
+    for (let t = 1; t <= reach; t++) {
+      const x = Math.round(cx + dx * t);
+      const y = Math.round(cy + dy * t);
+      if (x < 0 || x >= w || y < 0 || y >= h) break;
+      if (cls[y * w + x] === RED) {
+        hit++;
+        break;
+      }
+    }
+  }
+  return hit >= 6;
 }
 
 /** 中央の横帯が白く、その上下が白くない（進入禁止の白い棒）か */
@@ -103,7 +137,7 @@ function hasWhiteBar(rgba, w, x0, y0, bw, bh) {
   return frac(cy - half, cy + half) >= 0.6 && frac(y0 + bh * 0.2, y0 + bh * 0.35) < 0.3 && frac(y0 + bh * 0.65, y0 + bh * 0.8) < 0.3;
 }
 
-function classify(color, pix, count, w, x0, y0, bw, bh, rgba) {
+function classify(color, pix, count, w, x0, y0, bw, bh, rgba, cls, h) {
   const rowMin = new Int32Array(bh).fill(1e9);
   const rowMax = new Int32Array(bh).fill(-1);
   for (let k = 0; k < count; k++) {
@@ -116,7 +150,7 @@ function classify(color, pix, count, w, x0, y0, bw, bh, rgba) {
   const aspect = bw / bh;
   const fill = count / (bw * bh);
   // 標識は、赤や青の中に白い部分（地、文字、記号）がある。コーンや尾灯などは白がほとんどない
-  const white = color === YELLOW ? 1 : whiteFraction(rgba, w, x0, y0, bw, bh);
+  const white = color === YELLOW ? 1 : whiteFraction(rgba, w, x0, y0, bw, bh, color === RED ? cls : null);
   const cx = (bw - 1) / 2;
   const cy = (bh - 1) / 2;
   const r = (bw + bh) / 4;
@@ -162,6 +196,10 @@ function classify(color, pix, count, w, x0, y0, bw, bh, rgba) {
       if (c.ringHole && fill >= 0.2 && fill <= 0.75 && white >= 0.12) return 'red-circle';
       // 塗りつぶしは、白い横棒がある形（進入禁止）だけ。コーンや尾灯の赤い塊は除く
       if (!c.ringHole && fill >= 0.45 && hasWhiteBar(rgba, w, x0, y0, bw, bh)) return 'red-circle';
+      // 赤い輪に赤い斜め線、中が青（駐車禁止など）
+      let blue = 0;
+      for (let y = y0; y < y0 + bh; y++) for (let x = x0; x < x0 + bw; x++) if (cls[y * w + x] === BLUE) blue++;
+      if (blue / (bw * bh) >= 0.2 && fill <= 0.75) return 'red-circle';
     }
     if (aspect >= 0.95 && aspect <= 1.7 && fill >= 0.12 && fill <= 0.7) {
       if (white >= 0.1 && profileError((t) => 1 - t * 0.85) < 0.12) return 'red-triangle';
@@ -177,6 +215,7 @@ function classify(color, pix, count, w, x0, y0, bw, bh, rgba) {
   if (color === BLUE) {
     // 白い文字や矢印で青い画素が減るので、画素の割合ではなく外形の広がりで見る
     if (white < 0.04 || fill < 0.3) return null;
+    if (insideRed(cls, w, h, x0, y0, bw, bh)) return null; // 赤い丸の標識の一部。赤い丸の側で数える
     let rowSpan = 0;
     let rows = 0;
     for (let y = 0; y < bh; y++) {
@@ -207,6 +246,7 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
   const n = w * h;
   const cls = new Uint8Array(n);
   let lumaSum = 0;
+  const minSat = Math.min(o.redSat, o.blueSat, o.yellowSat);
 
   for (let i = 0, p = 0; i < n; i++, p += 4) {
     const r = rgba[p];
@@ -219,7 +259,7 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
     const d = mx - mn;
     if (d === 0) continue;
     const sat = d / mx;
-    if (sat < o.redSat) continue;
+    if (sat < minSat) continue;
     let hue;
     if (mx === r) hue = ((g - b) / d) % 6;
     else if (mx === g) hue = (b - r) / d + 2;
@@ -227,7 +267,7 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
     hue *= 60;
     if (hue < 0) hue += 360;
     if ((hue <= o.redHue[0] || hue >= o.redHue[1]) && sat >= o.redSat) cls[i] = RED;
-    else if (hue >= 205 && hue <= 245 && sat >= o.blueSat) cls[i] = BLUE;
+    else if (hue >= o.blueHue[0] && hue <= o.blueHue[1] && sat >= o.blueSat) cls[i] = BLUE;
     else if (hue >= o.yellowHue[0] && hue <= o.yellowHue[1] && sat >= o.yellowSat && mx >= o.yellowVMin * 255) cls[i] = YELLOW;
   }
 
@@ -281,7 +321,7 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
     if (count < 0.1 * bw * bh) continue;
     // 範囲の左右・下の端で切れている塊は、形を判断できないので除く（上端は画像の上端なので許す）
     if (minx === 0 || maxx === w - 1 || maxy === h - 1) continue;
-    const kind = classify(color, pix, count, w, minx, miny, bw, bh, rgba);
+    const kind = classify(color, pix, count, w, minx, miny, bw, bh, rgba, cls, h);
     if (debug) debug.push({ color, x: minx, y: miny, w: bw, h: bh, count, fill: +(count / (bw * bh)).toFixed(2), white: +whiteFraction(rgba, w, minx, miny, bw, bh).toFixed(2), kind });
     if (kind) cands.push({ kind, x: minx, y: miny, w: bw, h: bh });
   }

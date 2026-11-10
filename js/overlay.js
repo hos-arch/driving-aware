@@ -22,6 +22,7 @@ function drawSigns(ctx, signs, ox, oy, dw, dh, cw) {
   ctx.lineWidth = 3;
   ctx.font = '600 12px system-ui, sans-serif';
   ctx.textBaseline = 'bottom';
+  const labels = []; // すでに描いたラベルの位置。重なるラベルは描かない（枠は描く）
   for (const it of signs.items) {
     const x = ox + it.x * dw;
     const y = oy + it.y * dh;
@@ -33,6 +34,8 @@ function drawSigns(ctx, signs, ox, oy, dw, dh, cw) {
     const tw = ctx.measureText(text).width + 8;
     const tx = Math.min(Math.max(0, x - 3), cw - tw);
     const ty = Math.max(16, y - 5);
+    if (labels.some((l) => tx < l.x + l.w && l.x < tx + tw && Math.abs(l.y - ty) < 16)) continue;
+    labels.push({ x: tx, y: ty, w: tw });
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(tx, ty - 16, tw, 16);
     ctx.fillStyle = SIGN_COLORS[it.kind] ?? '#ffffff';
