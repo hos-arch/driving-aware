@@ -256,3 +256,85 @@ test('認識モジュール: 暗い映像・映像が取れないときは「未
   assert.equal(rn.process(frameFrom(night, 400)).state, STATES.UNCHECKED);
   assert.equal(createSignRecognizer().process(frameFrom(makeImage(), 0, false)).state, STATES.UNCHECKED);
 });
+
+// --- 元の解像度での見直し -------------------------------------------------------
+// 探す帯（幅 1280）では小さすぎる標識が、元の映像（幅 2560）では形を判定できる大きさになる場面。
+function hiresFrame(t, drawNative, base) {
+  const NW = 2560;
+  const NH = Math.round((H / 0.6) * 2); // 帯は映像の高さの 0〜60%
+  return {
+    width: 640,
+    height: 360,
+    timestamp: t,
+    videoWidth: NW,
+    getRegion: () => ({ data: base, width: W, height: H }),
+    getCrop: (xf, yf, wf, hf) => {
+      const sx = Math.round(xf * NW);
+      const sy = Math.round(yf * NH);
+      const sw = Math.round(wf * NW);
+      const sh = Math.round(hf * NH);
+      const data = new Uint8ClampedArray(sw * sh * 4);
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          const c = drawNative(sx + x, sy + y);
+          const p = (y * sw + x) * 4;
+          data[p] = c[0];
+          data[p + 1] = c[1];
+          data[p + 2] = c[2];
+          data[p + 3] = 255;
+        }
+      }
+      return { data, width: sw, height: sh, x: sx / NW, y: sy / NH, w: sw / NW, h: sh / NH, nativeW: sw };
+    },
+  };
+}
+
+// 元の映像での色: 中心 (600, 300)、半径 12 の円を、ring で塗り分ける
+const nativeSign = (ring) => (x, y) => {
+  const d2 = ((x - 600) ** 2 + (y - 300) ** 2) / 144;
+  return d2 <= 1 ? ring(d2) : [170, 175, 180];
+};
+
+test('見直し: 帯では小さすぎる赤い丸（直径 12px）を、元の解像度（直径 24px）で赤い丸と判定する', () => {
+  const base = makeImage();
+  paint(base, 300, 150, 6, (x, y) => x * x + y * y <= 1, RED);
+  paint(base, 300, 150, 6, (x, y) => x * x + y * y <= 0.4, WHITE);
+  assert.deepEqual(kinds(base), []); // 帯だけでは候補にならない
+  const draw = nativeSign((d2) => (d2 <= 0.62 ? WHITE : RED));
+  const rec = createSignRecognizer();
+  rec.process(hiresFrame(0, draw, base));
+  const r = rec.process(hiresFrame(400, draw, base));
+  assert.equal(r.state, STATES.DETECTED);
+  assert.equal(r.sign.items[0].kind, 'red-circle');
+  const it = r.sign.items[0];
+  assert.ok(Math.abs(it.x + it.w / 2 - 600 / 2560) < 0.01, `x=${it.x}`);
+});
+
+test('見直し: 元の映像が帯と同じ大きさなら見直さない。refine:false でも見直さない', () => {
+  const base = makeImage();
+  paint(base, 300, 150, 6, (x, y) => x * x + y * y <= 1, RED);
+  const draw = nativeSign((d2) => (d2 <= 0.62 ? WHITE : RED));
+  const same = (t) => ({ ...hiresFrame(t, draw, base), videoWidth: W });
+  const rec = createSignRecognizer();
+  rec.process(same(0));
+  assert.equal(rec.process(same(400)).state, STATES.NOT_DETECTED);
+  const off = createSignRecognizer({ refine: false });
+  off.process(hiresFrame(0, draw, base));
+  assert.equal(off.process(hiresFrame(400, draw, base)).state, STATES.NOT_DETECTED);
+});
+
+test('見直し: 青信号の灯（緑寄りの青、色相 193°）と、明るく光る赤信号の灯は、候補にしない', () => {
+  const base = makeImage();
+  paint(base, 300, 150, 6, (x, y) => x * x + y * y <= 1, [60, 160, 190]);
+  const teal = nativeSign((d2) => (d2 <= 0.1 ? WHITE : [40, 120, 140])); // 色相 192°、白い反射あり
+  const rec = createSignRecognizer();
+  rec.process(hiresFrame(0, teal, base));
+  assert.equal(rec.process(hiresFrame(400, teal, base)).state, STATES.NOT_DETECTED);
+
+  const base2 = makeImage();
+  paint(base2, 300, 150, 6, (x, y) => x * x + y * y <= 1, [250, 40, 60]);
+  const lamp = nativeSign((d2) => (d2 <= 0.62 ? [255, 235, 235] : [250, 40, 70])); // 明るさ 0.98
+  const rec2 = createSignRecognizer();
+  rec2.process(hiresFrame(0, lamp, base2));
+  assert.equal(rec2.process(hiresFrame(400, lamp, base2)).state, STATES.NOT_DETECTED);
+});

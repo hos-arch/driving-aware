@@ -1,13 +1,34 @@
 // 背面カメラの取得。失敗の種類を分けて返す。
 
-const PRIMARY = {
-  audio: false,
-  video: {
-    facingMode: { ideal: 'environment' },
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-  },
+// 頼む映像の大きさ。標識の小さい候補を元の解像度で見直すため、既定は 1920×1080。
+// 実機の負荷を比べるため、URL に ?cam=720 / ?cam=1080 / ?cam=4k を付けると変えられる。
+const SIZES = {
+  720: [1280, 720],
+  1080: [1920, 1080],
+  '4k': [3840, 2160],
 };
+
+function requestedSize() {
+  try {
+    const q = new URLSearchParams(location.search).get('cam');
+    if (q && SIZES[q]) return SIZES[q];
+  } catch {
+    // URL を読めない環境では既定
+  }
+  return SIZES[1080];
+}
+
+function primaryConstraints() {
+  const [width, height] = requestedSize();
+  return {
+    audio: false,
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: width },
+      height: { ideal: height },
+    },
+  };
+}
 
 const MESSAGES = {
   insecure: 'この接続ではカメラを使えません（HTTPS が必要です）',
@@ -77,7 +98,7 @@ export class Camera {
     this.stop();
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia(PRIMARY);
+      stream = await navigator.mediaDevices.getUserMedia(primaryConstraints());
     } catch (err) {
       if (err && err.name === 'OverconstrainedError') {
         try {

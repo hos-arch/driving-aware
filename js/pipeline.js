@@ -39,6 +39,34 @@ export class Pipeline {
     return this.regionCtx.getImageData(0, 0, dw, dh);
   }
 
+  /**
+   * 映像の一部（x,y,w,h は映像全体に対する比 0〜1）を、元の解像度のまま取り出す。幅が maxW を超えるときだけ縮める。
+   * 標識の小さい候補を、元の解像度で見直す用。
+   */
+  getCrop(xf, yf, wf, hf, maxW) {
+    const v = this.video;
+    const vw = v.videoWidth;
+    const vh = v.videoHeight;
+    const sx = Math.max(0, Math.round(xf * vw));
+    const sy = Math.max(0, Math.round(yf * vh));
+    const sw = Math.max(1, Math.min(vw - sx, Math.round(wf * vw)));
+    const sh = Math.max(1, Math.min(vh - sy, Math.round(hf * vh)));
+    const k = Math.min(1, maxW / sw);
+    const dw = Math.max(1, Math.round(sw * k));
+    const dh = Math.max(1, Math.round(sh * k));
+    if (!this.cropCanvas) {
+      this.cropCanvas = document.createElement('canvas');
+      this.cropCtx = this.cropCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    if (this.cropCanvas.width < dw || this.cropCanvas.height < dh) {
+      this.cropCanvas.width = Math.max(this.cropCanvas.width, dw);
+      this.cropCanvas.height = Math.max(this.cropCanvas.height, dh);
+    }
+    this.cropCtx.drawImage(v, sx, sy, sw, sh, 0, 0, dw, dh);
+    const img = this.cropCtx.getImageData(0, 0, dw, dh);
+    return { data: img.data, width: dw, height: dh, x: sx / vw, y: sy / vh, w: sw / vw, h: sh / vh, nativeW: sw };
+  }
+
   start() {
     if (this.running) return;
     this.running = true;
@@ -86,6 +114,8 @@ export class Pipeline {
       timestamp: now,
       getImageData: (x = 0, y = 0, rw = w, rh = h) => this.ctx.getImageData(x, y, rw, rh),
       getRegion: (y0f, y1f, outW) => this.getRegion(y0f, y1f, outW),
+      getCrop: (xf, yf, wf, hf, maxW) => this.getCrop(xf, yf, wf, hf, maxW),
+      videoWidth: v.videoWidth,
     };
 
     const results = {};

@@ -12,6 +12,8 @@ export const SIGN_DEFAULTS = {
   band: [0, 0.6], // 見る範囲（画像の高さに対する比）。標識がある高さを想定
   baseW: 1280, // 以下の長さの基準にする画像の幅
   minSide: 14, // 候補の最小の辺（基準幅での px）
+  seedSide: 5, // これ以上で候補にならなかった小さい塊は「種」として返す（元の解像度で見直す用。基準幅での px）
+  maxSeeds: 8, // 1 回に返す種の数の上限（大きいものから）
   maxFrac: 0.22, // 候補の最大の辺（画像の幅に対する比）
   vMin: 0.28, // これより暗い画素は色を見ない
   // 色の基準は、雨の日（濃く写る）と、明るい曇りの日（白っぽく薄く写る）の両方の映像で決めた。
@@ -280,6 +282,9 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
   const pix = new Int32Array(n);
   const cands = [];
   const debug = o.debug ? [] : null;
+  const seedSide = Math.max(2, Math.round(o.seedSide * s));
+  const seedMax = minSide * 3;
+  const seeds = [];
 
   for (let start = 0; start < n; start++) {
     const color = cls[start];
@@ -317,13 +322,20 @@ export function findSignCandidates(rgba, w, h, opts = {}) {
     }
     const bw = maxx - minx + 1;
     const bh = maxy - miny + 1;
-    if (bw < minSide || bh < minSide || bw > maxSide || bh > maxSide) continue;
+    if (bw > maxSide || bh > maxSide) continue;
     if (count < 0.1 * bw * bh) continue;
     // 範囲の左右・下の端で切れている塊は、形を判断できないので除く（上端は画像の上端なので許す）
     if (minx === 0 || maxx === w - 1 || maxy === h - 1) continue;
+    const isSeed = bw >= seedSide && bh >= seedSide && bw < seedMax && bh < seedMax;
+    if (bw < minSide || bh < minSide) {
+      if (isSeed) seeds.push({ color, x: minx, y: miny, w: bw, h: bh });
+      continue;
+    }
     const kind = classify(color, pix, count, w, minx, miny, bw, bh, rgba, cls, h);
+    if (!kind && isSeed) seeds.push({ color, x: minx, y: miny, w: bw, h: bh });
     if (debug) debug.push({ color, x: minx, y: miny, w: bw, h: bh, count, fill: +(count / (bw * bh)).toFixed(2), white: +whiteFraction(rgba, w, minx, miny, bw, bh).toFixed(2), kind });
     if (kind) cands.push({ kind, x: minx, y: miny, w: bw, h: bh });
   }
-  return { meanLuma: lumaSum / n, cands, debug };
+  seeds.sort((a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h));
+  return { meanLuma: lumaSum / n, cands, seeds: seeds.slice(0, o.maxSeeds), debug };
 }
