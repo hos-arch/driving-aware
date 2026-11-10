@@ -59,6 +59,32 @@ function classify(err) {
   }
 }
 
+/**
+ * 「ideal（できれば）」の頼み方では、端末が小さい映像を選ぶことがある（iPhone で 1280×720 のままだった）。
+ * 届いた映像が頼んだ大きさより小さいときだけ、「exact（必ず）」で頼み直す。縦向きの端末では幅と高さが逆になるので、両方試す。
+ * 頼み直しに失敗しても、今の映像のまま続ける。
+ */
+async function upgradeSize(track) {
+  const [w, h] = requestedSize();
+  const long = (s) => Math.max(s.width || 0, s.height || 0);
+  try {
+    if (long(track.getSettings()) >= w) return;
+  } catch {
+    return;
+  }
+  for (const [ew, eh] of [
+    [w, h],
+    [h, w],
+  ]) {
+    try {
+      await track.applyConstraints({ width: { exact: ew }, height: { exact: eh } });
+      if (long(track.getSettings()) >= w) return;
+    } catch {
+      // この組み合わせは出せない。次を試す
+    }
+  }
+}
+
 export class Camera {
   constructor(videoEl, { onEnded } = {}) {
     this.video = videoEl;
@@ -81,7 +107,8 @@ export class Camera {
     } catch {
       // 対応していないブラウザでは、最大は表示しない
     }
-    return `${w}×${h}${max}`;
+    const [rw, rh] = requestedSize();
+    return `${w}×${h}（頼んだ ${rw}×${rh}${max ? `、${max.slice(1, -1)}` : ''}）`;
   }
 
   /** 映像が流れている状態か */
@@ -113,6 +140,7 @@ export class Camera {
 
     this.stream = stream;
     const track = stream.getVideoTracks()[0];
+    await upgradeSize(track);
     track.addEventListener('ended', () => this.onEnded());
     this.video.srcObject = stream;
     try {

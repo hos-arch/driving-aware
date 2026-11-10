@@ -2,3 +2,13 @@
   Permissions-Policy: camera=(self), geolocation=(self)
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
+
+# 更新した画面やプログラムが、古いまま使われないように、毎回新しいか確かめさせる
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/js/*
+  Cache-Control: no-cache
+/css/*
+  Cache-Control: no-cache
