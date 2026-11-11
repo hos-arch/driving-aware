@@ -6,13 +6,12 @@
 // frame = { video, width, height, timestamp, getImageData() }
 //   getImageData() は必要な認識モジュールだけが呼ぶ（毎フレーム取り出さない）。
 //
-// ステップ2以降は、ここに車線・標識・横断歩道・歩行者の実装を差し替えて追加する。
-// （車線: ステップ2、標識の色と形: ステップ3 の手順1。横断歩道・歩行者は未実装のスタブ）
+// 車線は実装済み。標識の認識は外した（色と形だけでは看板と区別できなかったため。コードは git の履歴に残る）。
+// 次は歩行者（人の検出）を最優先で実装する。横断歩道・歩行者は今は未実装のスタブ。
 // 重い処理は Web Worker へ移せるよう、process は frame だけを入力に取る。
 
 import { STATES } from './states.js';
 import { createLaneRecognizer } from './lane.js';
-import { createSignRecognizer } from './sign.js';
 
 export { STATES };
 
@@ -29,7 +28,6 @@ function createStub(id, label) {
 export function createRecognizers(config = {}) {
   return [
     createLaneRecognizer(config.lane),
-    createSignRecognizer(config.sign),
     createStub('crosswalk', '横断歩道'),
     createStub('pedestrian', '歩行者'),
   ];

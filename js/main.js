@@ -3,7 +3,7 @@ import { Gps } from './gps.js';
 import { WakeLock } from './wakelock.js';
 import { Pipeline } from './pipeline.js';
 import { createRecognizers, STATES } from './recognizers/index.js';
-import { msToKmh, formatSpeed, isOverspeed, describeGps } from './format.js';
+import { msToKmh, formatSpeed, describeGps } from './format.js';
 import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
 import { drawOverlay } from './overlay.js';
 
@@ -20,10 +20,8 @@ const STALL_MS = 2000; // 処理が止まったとみなすまでの時間
 // --- 状態 -------------------------------------------------------------
 let started = false;
 let camState = 'stopped'; // stopped | starting | ok | <失敗の種類>
-let speedLimitKmh = null; // 標識認識（ステップ3）が入るまで常に null
 let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（幅に対する比）。未設定なら null
 let lastLane = null;
-let lastSigns = null;
 
 const camera = new Camera($('cam'), {
   onEnded: () => {
@@ -43,16 +41,10 @@ const pipeline = new Pipeline($('cam'), recognizers, {
 function renderSpeed() {
   const desc = describeGps({ ...gps.snapshot(), now: Date.now() });
   const kmh = desc.kind === 'ok' ? msToKmh(gps.speedMs) : null;
-  const over = isOverspeed(kmh, speedLimitKmh);
 
   $('speed').textContent = formatSpeed(kmh);
-  $('speed').dataset.state = over ? 'over' : kmh == null ? 'unknown' : 'ok';
+  $('speed').dataset.state = kmh == null ? 'unknown' : 'ok';
   $('gpsNote').textContent = desc.text;
-  $('overspeed').hidden = !over;
-
-  $('limit').textContent = speedLimitKmh == null ? '--' : String(speedLimitKmh);
-  $('limitNote').textContent =
-    speedLimitKmh == null ? '未確認（速度標識の数字は読めません）' : '認識した速度標識';
 
   return desc;
 }
@@ -67,7 +59,6 @@ function renderRecognizers(results) {
     stateEl.textContent = STATE_TEXT[res.state] ?? STATE_TEXT[STATES.UNCHECKED];
     row.querySelector('.detail').textContent = res.detail ? `（${res.detail}）` : '';
   }
-  lastSigns = results.sign ? results.sign.sign : null;
   renderLane(results.lane ? results.lane.lane : null);
 }
 
@@ -76,7 +67,7 @@ function renderLane(lane) {
   lastLane = lane;
   const both = !!(lane && lane.left && lane.right);
   const carX = both && refDx != null ? (0.5 + refDx) * lane.frameW : null;
-  drawOverlay($('overlay'), $('cam'), lane, carX, lastSigns);
+  drawOverlay($('overlay'), $('cam'), lane, carX);
 
   const dot = $('laneDot');
   const text = $('lanePosText');
