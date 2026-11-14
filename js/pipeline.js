@@ -116,6 +116,7 @@ export class Pipeline {
       getRegion: (y0f, y1f, outW) => this.getRegion(y0f, y1f, outW),
       getCrop: (xf, yf, wf, hf, maxW) => this.getCrop(xf, yf, wf, hf, maxW),
       videoWidth: v.videoWidth,
+      videoHeight: v.videoHeight,
     };
 
     const results = {};

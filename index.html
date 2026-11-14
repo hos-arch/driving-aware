@@ -26,6 +26,7 @@
       <li>研究・試作用のアプリです。<strong>安全装置ではありません。</strong>認識の結果を運転の判断に使わないでください。</li>
       <li>停車した状態で開始し、ホルダーに固定してから走行してください。運転中は操作・注視をしないでください。</li>
       <li>カメラ映像と位置情報は端末内だけで処理され、外部へ送信されません。</li>
+      <li>人の検出が迷った場面の画像（最大 1000 枚）を、学習用にこの端末の中へ保存します。通行人が写ることがあります。取り出すのは、停車中に「ZIPで保存」を押したときだけです。</li>
       <li>画面をロックしたり他のアプリに切り替えたりすると、カメラと処理は止まります。</li>
     </ul>
     <button id="startBtn" class="btn" type="button">開始</button>
@@ -50,6 +51,13 @@
         <span id="lanePosText">位置 未確認</span>
         <button id="calBtn" class="btn small ghost" type="button" disabled>中央合わせ</button>
       </div>
+      <div class="lanerow">
+        <span id="capText">学習用の保存 0/1000</span>
+        <span class="capbtns">
+          <button id="capSave" class="btn small ghost" type="button" disabled>ZIPで保存</button>
+          <button id="capClear" class="btn small ghost" type="button" disabled>消去</button>
+        </span>
+      </div>
     </div>
 
     <div id="alert" class="alert" role="alert" hidden>
@@ -62,6 +70,7 @@
       <span id="sysGps" data-level="ng">GPS 待ち</span>
       <span id="sysWake" data-level="ng">常時点灯 無効</span>
       <span id="sysProc" data-level="ng">処理 停止</span>
+      <span id="sysModel" data-level="warn">人モデル 読み込み中</span>
     </footer>
   </main>
 

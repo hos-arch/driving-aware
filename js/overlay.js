@@ -3,7 +3,42 @@
 
 const LINE_COLOR = '#4fe3ff';
 
-export function drawOverlay(canvas, video, lane, carX) {
+const PERSON_COLOR = '#ffb020';
+
+// 人の検出。細い枠は「人を探している範囲」（その外は見ていない）。
+// 実線の枠は検出（続けて見つかった、確からしさの高いもの）。点線の枠は候補（まだ確かでないもの）。
+function drawPersons(ctx, person, ox, oy, dw, dh) {
+  if (!person) return;
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255, 176, 32, 0.45)';
+  for (const t of person.tiles) ctx.strokeRect(ox + t.x * dw, oy + t.y * dh, t.w * dw, t.h * dh);
+  ctx.font = '700 13px system-ui, sans-serif';
+  ctx.textBaseline = 'bottom';
+  for (const it of person.items) {
+    const x = ox + it.x * dw;
+    const y = oy + it.y * dh;
+    const w = it.w * dw;
+    const h = it.h * dh;
+    ctx.strokeStyle = PERSON_COLOR;
+    if (it.confirmed) {
+      ctx.setLineDash([]);
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(x - 2, y - 20, 22, 17);
+      ctx.fillStyle = PERSON_COLOR;
+      ctx.fillText('人', x + 2, y - 4);
+    } else {
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+    }
+  }
+  ctx.restore();
+}
+
+export function drawOverlay(canvas, video, lane, carX, person) {
   const dpr = window.devicePixelRatio || 1;
   const cw = canvas.clientWidth;
   const ch = canvas.clientHeight;
@@ -21,6 +56,7 @@ export function drawOverlay(canvas, video, lane, carX) {
   const sc = Math.max(cw / vw, ch / vh);
   const ox = (cw - vw * sc) / 2;
   const oy = (ch - vh * sc) / 2;
+  drawPersons(ctx, person, ox, oy, vw * sc, vh * sc);
   if (!lane) return;
   const mx = (fx) => ox + (fx / lane.frameW) * vw * sc;
   const my = (fy) => oy + (fy / lane.frameH) * vh * sc;

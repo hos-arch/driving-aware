@@ -6,6 +6,8 @@ import { createRecognizers, STATES } from './recognizers/index.js';
 import { msToKmh, formatSpeed, describeGps } from './format.js';
 import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
 import { drawOverlay } from './overlay.js';
+import { loadOrtDetector } from './recognizers/person-ort.js';
+import { Capture } from './capture.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,6 +24,9 @@ let started = false;
 let camState = 'stopped'; // stopped | starting | ok | <失敗の種類>
 let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（幅に対する比）。未設定なら null
 let lastLane = null;
+let lastPerson = null;
+let personInfo = null; // 人の検出モデルの名前とスレッド数（読み込み後に入る）
+let clearArmedAt = 0; // 「消去」を 1 回押した時刻（もう一度押すと消す）
 
 const camera = new Camera($('cam'), {
   onEnded: () => {
@@ -32,7 +37,21 @@ const camera = new Camera($('cam'), {
 });
 const gps = new Gps({ onChange: () => renderAll() });
 const wakeLock = new WakeLock({ onChange: () => renderAll() });
-const recognizers = createRecognizers({ lane: loadLaneConfig() });
+const capture = new Capture({ limit: 1000, onChange: () => renderCapture() });
+const recognizers = createRecognizers({
+  lane: loadLaneConfig(),
+  person: {
+    loadDetector: async () => {
+      const d = await loadOrtDetector();
+      personInfo = d.info;
+      return d;
+    },
+    onScan: (scan) => {
+      const v = $('cam');
+      capture.offer(scan, { model: personInfo && personInfo.model, video: [v.videoWidth, v.videoHeight] });
+    },
+  },
+});
 const pipeline = new Pipeline($('cam'), recognizers, {
   onResult: (results) => renderRecognizers(results),
 });
@@ -59,6 +78,7 @@ function renderRecognizers(results) {
     stateEl.textContent = STATE_TEXT[res.state] ?? STATE_TEXT[STATES.UNCHECKED];
     row.querySelector('.detail').textContent = res.detail ? `（${res.detail}）` : '';
   }
+  lastPerson = results.pedestrian ? results.pedestrian.person : null;
   renderLane(results.lane ? results.lane.lane : null);
 }
 
@@ -67,7 +87,7 @@ function renderLane(lane) {
   lastLane = lane;
   const both = !!(lane && lane.left && lane.right);
   const carX = both && refDx != null ? (0.5 + refDx) * lane.frameW : null;
-  drawOverlay($('overlay'), $('cam'), lane, carX);
+  drawOverlay($('overlay'), $('cam'), lane, carX, lastPerson);
 
   const dot = $('laneDot');
   const text = $('lanePosText');
@@ -86,6 +106,20 @@ function renderLane(lane) {
     const off = Math.round((pos - 0.5) * 100);
     text.textContent = Math.abs(off) < 3 ? '位置 中央' : `位置 中央から${off < 0 ? '左' : '右'}へ ${Math.abs(off)}%`;
   }
+}
+
+// 学習用の保存の表示。取り出しは、止まっているときだけできる。
+function renderCapture() {
+  const kmh = gps.speedMs == null ? null : msToKmh(gps.speedMs);
+  const moving = kmh != null && kmh > 5;
+  const none = capture.status !== 'ready' || capture.count === 0;
+  $('capText').textContent =
+    capture.status === 'unavailable'
+      ? '学習用の保存 使えません'
+      : `学習用の保存 ${capture.count}/${capture.limit}${capture.full ? '（いっぱい）' : ''}`;
+  $('capSave').disabled = none || moving;
+  $('capClear').disabled = none || moving;
+  $('capClear').textContent = Date.now() - clearArmedAt < 4000 ? 'もう一度で消去' : '消去';
 }
 
 function setSys(id, level, text) {
@@ -126,6 +160,7 @@ function renderSys(gpsDesc) {
   } else {
     setSys('sysProc', 'ng', '処理 停止');
   }
+  if (personInfo) setSys('sysModel', 'ok', `人モデル ${personInfo.model}・${personInfo.threads}スレッド`);
   return alive;
 }
 
@@ -152,6 +187,7 @@ function renderAll() {
     renderRecognizers({});
   }
   renderAlert();
+  renderCapture();
 }
 
 // --- カメラ -----------------------------------------------------------
@@ -193,6 +229,51 @@ $('calBtn').addEventListener('click', () => {
   setRefDx(refDx);
   renderLane(lane);
 });
+
+// 学習用の画像を ZIP にまとめて取り出す。共有シート（「ファイルに保存」）が使えればそれを使い、なければダウンロードする。
+$('capSave').addEventListener('click', async () => {
+  $('capSave').disabled = true;
+  try {
+    const { name, blob } = await capture.exportZip();
+    const file = new File([blob], name, { type: 'application/zip' });
+    let shared = false;
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        shared = true;
+      } catch (err) {
+        if (err && err.name === 'AbortError') shared = true; // 利用者が取り消した
+      }
+    }
+    if (!shared) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+  } catch (err) {
+    console.error('[capture]', err);
+    $('capText').textContent = '学習用の保存 取り出しに失敗';
+  }
+  renderCapture();
+});
+
+// 押しまちがいで消さないよう、2 回押したときだけ消す
+$('capClear').addEventListener('click', async () => {
+  if (Date.now() - clearArmedAt < 4000) {
+    clearArmedAt = 0;
+    await capture.clear();
+  } else {
+    clearArmedAt = Date.now();
+    setTimeout(renderCapture, 4100);
+  }
+  renderCapture();
+});
+
+capture.init();
 
 document.addEventListener('visibilitychange', () => {
   if (!started || document.visibilityState !== 'visible') return;

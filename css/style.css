@@ -288,3 +288,5 @@ html, body {
   .alert { padding: 6px 12px; font-size: 0.85rem; }
   .sysline { font-size: 0.72rem; }
 }
+
+.capbtns { display: inline-flex; gap: 6px; }
