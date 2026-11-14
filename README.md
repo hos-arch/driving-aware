@@ -139,7 +139,7 @@ js/pipeline.js               映像フレームを認識モジュールへ渡す
 js/overlay.js                映像への重ね描き（探索範囲・車線・自車位置）
 js/config.js                 設定（探索範囲・消失点・位置の基準）
 js/format.js                 速度変換・GPS 状態判定
-js/recognizers/index.js      認識モジュールの共通インターフェース（横断歩道・歩行者は未実装のスタブ）
+js/recognizers/index.js      認識モジュールの共通インターフェース（横断歩道は未実装のスタブ）
 js/recognizers/states.js     認識結果の 3 つの状態
 js/recognizers/lane-core.js  車線の候補抽出（画像 → 線分）
 js/recognizers/lane.js       車線認識モジュール（時間方向の安定化）
