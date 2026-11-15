@@ -156,3 +156,72 @@ test('createPersonRecognizer: モデルを読み込めないときは未確認�
   assert.equal(r.state, STATES.UNCHECKED);
   assert.match(r.detail, /読み込めません/);
 });
+
+test('reload: モデルを切り替えると、前の結果を捨て、新しいモデルで判定し、古いモデルは解放する', async () => {
+  const loaded = [];
+  const disposed = [];
+  const mk = (name, hasPerson) => {
+    const d = { name, run: async () => fakeOutput(hasPerson ? [{ gx: 10, gy: 20, w: 20, h: 60, obj: 0.9 }] : []), dispose: () => disposed.push(name) };
+    loaded.push(name);
+    return d;
+  };
+  const rec = createPersonRecognizer({ loadDetector: async (name) => mk(name ?? 'nano', name !== 'tiny') });
+  await tick();
+  assert.equal(rec.modelState(), 'ready');
+  let r;
+  for (let t = 100; t <= 1200; t += 100) {
+    r = rec.process(fakeFrame(t));
+    await tick();
+  }
+  assert.equal(r.state, STATES.DETECTED);
+
+  const done = rec.reload('tiny');
+  assert.equal(rec.modelState(), 'loading');
+  assert.equal(rec.process(fakeFrame(1300)).state, STATES.UNCHECKED); // 読み込み中は未確認。前の結果は出さない
+  await done;
+  await tick();
+  assert.equal(rec.modelState(), 'ready');
+  assert.deepEqual(loaded, ['nano', 'tiny']);
+  assert.deepEqual(disposed, ['nano']);
+  for (let t = 1400; t <= 2600; t += 100) {
+    r = rec.process(fakeFrame(t));
+    await tick();
+  }
+  assert.equal(r.state, STATES.NOT_DETECTED); // 新しいモデルは人を見つけない（偽物）。前のモデルの結果は残っていない
+});
+
+test('reload: 読み込み中にまた切り替えたら、遅れて届いた古い方は使わず解放する', async () => {
+  const disposed = [];
+  const resolvers = {};
+  const rec = createPersonRecognizer({
+    loadDetector: (name) =>
+      name === undefined
+        ? Promise.resolve({ run: async () => fakeOutput([]), dispose: () => disposed.push('first') })
+        : new Promise((res) => (resolvers[name] = () => res({ run: async () => fakeOutput([]), dispose: () => disposed.push(name), tag: name }))),
+  });
+  await tick();
+  const a = rec.reload('tiny');
+  const b = rec.reload('nano');
+  await tick(); // 読み込みの手続きが始まるのを待つ
+  resolvers.nano();
+  await b;
+  resolvers.tiny(); // 古い読み込みが後から終わる
+  await a;
+  await tick();
+  assert.equal(rec.modelState(), 'ready');
+  assert.deepEqual(disposed.sort(), ['first', 'tiny']);
+});
+
+test('reload: 読み込みに失敗したら failed で、もう一度 reload すれば直る', async () => {
+  let fail = true;
+  const rec = createPersonRecognizer({ loadDetector: async () => { if (fail) throw new Error('x'); return { run: async () => fakeOutput([]) }; } });
+  const orig = console.error;
+  console.error = () => {};
+  await tick();
+  await tick();
+  assert.equal(rec.modelState(), 'failed');
+  fail = false;
+  await rec.reload('nano');
+  console.error = orig;
+  assert.equal(rec.modelState(), 'ready');
+});

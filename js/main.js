@@ -6,7 +6,7 @@ import { createRecognizers, STATES } from './recognizers/index.js';
 import { msToKmh, formatSpeed, describeGps } from './format.js';
 import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
 import { drawOverlay } from './overlay.js';
-import { loadOrtDetector } from './recognizers/person-ort.js';
+import { loadOrtDetector, personModelName, setPersonModel, MODEL_LABELS } from './recognizers/person-ort.js';
 import { Capture } from './capture.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +25,8 @@ let camState = 'stopped'; // stopped | starting | ok | <失敗の種類>
 let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（幅に対する比）。未設定なら null
 let lastLane = null;
 let lastPerson = null;
-let personInfo = null; // 人の検出モデルの名前とスレッド数（読み込み後に入る）
+let personModel = personModelName(); // いま選んでいる人の検出モデル（nano | tiny）
+let personInfo = null; // 読み込み済みのモデルの名前とスレッド数（読み込み中は null）
 let clearArmedAt = 0; // 「消去」を 1 回押した時刻（もう一度押すと消す）
 
 const camera = new Camera($('cam'), {
@@ -41,9 +42,10 @@ const capture = new Capture({ limit: 1000, onChange: () => renderCapture() });
 const recognizers = createRecognizers({
   lane: loadLaneConfig(),
   person: {
-    loadDetector: async () => {
-      const d = await loadOrtDetector();
-      personInfo = d.info;
+    loadDetector: async (name) => {
+      const want = name ?? personModel;
+      const d = await loadOrtDetector(want);
+      if (want === personModel) personInfo = d.info; // 読み込み中にまた切り替えられたときは、古い方の情報を入れない
       return d;
     },
     onScan: (scan) => {
@@ -52,6 +54,7 @@ const recognizers = createRecognizers({
     },
   },
 });
+const personRecognizer = recognizers.find((r) => r.id === 'pedestrian');
 const pipeline = new Pipeline($('cam'), recognizers, {
   onResult: (results) => renderRecognizers(results),
 });
@@ -108,10 +111,24 @@ function renderLane(lane) {
   }
 }
 
+// 人の検出モデルの表示と、切り替えボタン。切り替えは、止まっているときだけできる（運転中に操作しない）。
+function isMoving() {
+  const kmh = gps.speedMs == null ? null : msToKmh(gps.speedMs);
+  return kmh != null && kmh > 5;
+}
+
+function renderModel() {
+  const st = personRecognizer.modelState();
+  const other = personModel === 'nano' ? 'tiny' : 'nano';
+  $('modelText').textContent =
+    st === 'loading' ? `人モデル ${personModel} 読み込み中` : st === 'failed' ? `人モデル ${personModel} 読み込めません` : `人モデル ${personModel}（${MODEL_LABELS[personModel]}）`;
+  $('modelBtn').textContent = `${other}（${MODEL_LABELS[other]}）へ`;
+  $('modelBtn').disabled = st === 'loading' || isMoving();
+}
+
 // 学習用の保存の表示。取り出しは、止まっているときだけできる。
 function renderCapture() {
-  const kmh = gps.speedMs == null ? null : msToKmh(gps.speedMs);
-  const moving = kmh != null && kmh > 5;
+  const moving = isMoving();
   const none = capture.status !== 'ready' || capture.count === 0;
   $('capText').textContent =
     capture.status === 'unavailable'
@@ -160,7 +177,10 @@ function renderSys(gpsDesc) {
   } else {
     setSys('sysProc', 'ng', '処理 停止');
   }
-  if (personInfo) setSys('sysModel', 'ok', `人モデル ${personInfo.model}・${personInfo.threads}スレッド`);
+  const ms = personRecognizer.modelState();
+  if (personInfo && ms === 'ready') setSys('sysModel', 'ok', `人モデル ${personInfo.model}・${personInfo.threads}スレッド`);
+  else if (ms === 'failed') setSys('sysModel', 'ng', '人モデル 読み込み失敗');
+  else setSys('sysModel', 'warn', '人モデル 読み込み中');
   return alive;
 }
 
@@ -188,6 +208,7 @@ function renderAll() {
   }
   renderAlert();
   renderCapture();
+  renderModel();
 }
 
 // --- カメラ -----------------------------------------------------------
@@ -259,6 +280,18 @@ $('capSave').addEventListener('click', async () => {
     $('capText').textContent = '学習用の保存 取り出しに失敗';
   }
   renderCapture();
+});
+
+// 人の検出モデルを切り替える。読み込み中も、車線など他の認識は止めない。
+$('modelBtn').addEventListener('click', async () => {
+  if (personRecognizer.modelState() === 'loading' || isMoving()) return;
+  personModel = personModel === 'nano' ? 'tiny' : 'nano';
+  setPersonModel(personModel);
+  personInfo = null;
+  const done = personRecognizer.reload(personModel);
+  renderAll();
+  await done;
+  renderAll();
 });
 
 // 押しまちがいで消さないよう、2 回押したときだけ消す
