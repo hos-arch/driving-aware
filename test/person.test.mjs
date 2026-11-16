@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TILE, planTiles, toInput, decodePersons, toFrame, PersonTracker } from '../js/recognizers/person-core.js';
+import { TILE, planTiles, toInput, decodePersons, decodeAll, dropInVehicles, toFrame, PersonTracker } from '../js/recognizers/person-core.js';
 
 test('planTiles: 横向き 1920×1080 は 3 枚で、幅全体を覆う', () => {
   const t = planTiles(1920, 1080);
@@ -224,4 +224,40 @@ test('reload: 読み込みに失敗したら failed で、もう一度 reload �
   await rec.reload('nano');
   console.error = orig;
   assert.equal(rec.modelState(), 'ready');
+});
+
+test('decodeAll: 人と車を別々に取り出す', () => {
+  const out = fakeOutput([
+    { gx: 10, gy: 20, w: 20, h: 60, obj: 0.9 },
+    { gx: 30, gy: 30, w: 120, h: 100, obj: 0.8, cls: 2 },
+    { gx: 45, gy: 10, w: 60, h: 60, obj: 0.5, cls: 7 },
+    { gx: 5, gy: 5, w: 60, h: 60, obj: 0.9, cls: 16 }, // 犬 → どちらにも入らない
+  ]);
+  const { persons, vehicles } = decodeAll(out);
+  assert.equal(persons.length, 1);
+  assert.equal(vehicles.length, 2);
+});
+
+test('dropInVehicles: 車の窓のあたりの枠は外し、車の手前に立つ人・車の外の人は残す', () => {
+  const car = { x: 100, y: 100, w: 200, h: 150, s: 0.9 }; // 下端は 250
+  const windowBox = { x: 160, y: 110, w: 60, h: 50, s: 0.4 }; // 車の上の方 → 外す
+  const inFront = { x: 150, y: 120, w: 40, h: 135, s: 0.8 }; // 足元が車の下端より下 → 残す
+  const feetAtBottom = { x: 220, y: 130, w: 40, h: 118, s: 0.8 }; // 足元が車の下端とほぼ同じ → 残す
+  const beside = { x: 310, y: 150, w: 30, h: 90, s: 0.7 }; // 車の外 → 残す
+  const halfIn = { x: 80, y: 120, w: 40, h: 60, s: 0.6 }; // 半分だけ車に重なる → 残す
+  const { kept, dropped } = dropInVehicles([windowBox, inFront, feetAtBottom, beside, halfIn], [car]);
+  assert.deepEqual(dropped, [windowBox]);
+  assert.equal(kept.length, 4);
+  assert.deepEqual(dropInVehicles([windowBox], []).kept, [windowBox]); // 車が無ければ何も外さない
+});
+
+test('decodePersons: 車の中に出た人の枠は返さない', () => {
+  const out = fakeOutput([
+    { gx: 30, gy: 30, w: 160, h: 120, obj: 0.9, cls: 2 }, // 車: 中心 (244, 244)
+    { gx: 30, gy: 26, w: 40, h: 40, obj: 0.6 }, // 車の上の方の「人」
+    { gx: 5, gy: 30, w: 20, h: 60, obj: 0.7 }, // 車の外の人
+  ]);
+  const d = decodePersons(out);
+  assert.equal(d.length, 1);
+  assert.ok(d[0].x < 100);
 });

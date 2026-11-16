@@ -4,12 +4,13 @@
 // 注意: 「検出されず」は「人がいない」という意味ではない。見ているのは帯の中だけで、見落としもある。
 
 import { STATES } from './states.js';
-import { TILE, PERSON_DEFAULTS, planTiles, toInput, decodePersons, toFrame, PersonTracker } from './person-core.js';
+import { TILE, PERSON_DEFAULTS, planTiles, toInput, decodeAll, dropInVehicles, toFrame, PersonTracker } from './person-core.js';
 
 /**
  * options.loadDetector(name?): Promise<{ run(Float32Array) -> Promise<Float32Array>, info, dispose?() }>
  *   name は reload(name) で切り替えたときだけ渡す。
- * options.onScan({ index, crop, dets, time }): 1 枚のタイルの結果が出るたびに呼ぶ（学習用の保存に使う）
+ * options.onScan({ index, crop, dets, time, vehicles, dropped }): 1 枚のタイルの結果が出るたびに呼ぶ（学習用の保存に使う）
+ *   dets は人の枠（車の中に出た枠を外したあと）、vehicles は車の枠、dropped は外した人の枠。
  */
 export function createPersonRecognizer(options = {}) {
   const o = { ...PERSON_DEFAULTS, ...options };
@@ -70,13 +71,14 @@ export function createPersonRecognizer(options = {}) {
       .run(toInput(crop.data, crop.width, crop.height))
       .then((out) => {
         if (gen !== generation) return; // 切り替え前のモデルの結果は使わない
-        const dets = decodePersons(out, o);
+        const all = decodeAll(out, o);
+        const { kept: dets, dropped } = dropInVehicles(all.persons, all.vehicles, o); // 車の中に出た枠は外す
         const dt = performance.now() - t0;
         inferMs = inferMs ? inferMs * 0.7 + dt * 0.3 : dt;
         failures = 0;
         if (index >= tiles.length || tiles[index] !== tile) return; // 途中で映像の大きさが変わった
         tracker.update(index, dets.map((d) => toFrame(d, crop, crop.width, crop.height)), time);
-        if (o.onScan) o.onScan({ index, crop, dets, time });
+        if (o.onScan) o.onScan({ index, crop, dets, time, vehicles: all.vehicles, dropped });
       })
       .catch((err) => {
         if (gen !== generation) return;

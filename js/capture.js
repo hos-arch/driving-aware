@@ -13,6 +13,10 @@ function req(r) {
   });
 }
 
+function fmt(d) {
+  return { x: +d.x.toFixed(1), y: +d.y.toFixed(1), w: +d.w.toFixed(1), h: +d.h.toFixed(1), score: +d.s.toFixed(3) };
+}
+
 function pad(n, w = 2) {
   return String(n).padStart(w, '0');
 }
@@ -26,6 +30,21 @@ export function isUncertain(dets, low, high) {
   return dets.some((d) => d.s >= low && d.s < high);
 }
 
+function overlap(a, b) {
+  const ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  if (ix <= 0 || iy <= 0) return 0;
+  return (ix * iy) / (a.w * a.h + b.w * b.h - ix * iy);
+}
+
+/**
+ * 前に保存した枠（prev）と比べて、新しい「迷った枠」があるか。
+ * 信号待ちなどで、同じ場所の同じ物（床屋のサインポールなど）を何十枚も保存しないため。
+ */
+export function hasNewUncertain(dets, prev, low, high, sameIou = 0.5) {
+  return dets.some((d) => d.s >= low && d.s < high && !(prev ?? []).some((p) => overlap(p, d) > sameIou));
+}
+
 export class Capture {
   constructor({ limit = 1000, minGapMs = 1000, low = 0.3, high = 0.5, onChange } = {}) {
     this.limit = limit;
@@ -37,6 +56,7 @@ export class Capture {
     this.status = 'starting'; // starting | ready | unavailable
     this.db = null;
     this.lastAt = [];
+    this.lastBoxes = []; // タイルごとの、前に保存した画像の枠
     this.saving = false;
     this.canvas = null;
   }
@@ -64,7 +84,9 @@ export class Capture {
     if (this.status !== 'ready' || this.saving || this.full) return;
     if (!isUncertain(scan.dets, this.low, this.high)) return;
     if (scan.time - (this.lastAt[scan.index] ?? -Infinity) < this.minGapMs) return;
+    if (!hasNewUncertain(scan.dets, this.lastBoxes[scan.index], this.low, this.high)) return; // 前と同じ物だけなら保存しない
     this.lastAt[scan.index] = scan.time;
+    this.lastBoxes[scan.index] = scan.dets.map((d) => ({ x: d.x, y: d.y, w: d.w, h: d.h }));
     this.saving = true;
     this.save(scan, info)
       .catch((err) => console.error('[capture]', err))
@@ -92,7 +114,9 @@ export class Capture {
       tile: { x: crop.x, y: crop.y, w: crop.w, h: crop.h }, // 映像全体に対する比
       size: [crop.width, crop.height],
       // 枠は画像の中の画素（x, y は左上）。score はモデルの確からしさ。正解ではない。
-      boxes: scan.dets.map((d) => ({ x: +d.x.toFixed(1), y: +d.y.toFixed(1), w: +d.w.toFixed(1), h: +d.h.toFixed(1), score: +d.s.toFixed(3) })),
+      boxes: scan.dets.map(fmt),
+      vehicles: (scan.vehicles ?? []).map(fmt), // 車の枠
+      dropped: (scan.dropped ?? []).map(fmt), // 車の中に出たので外した「人」の枠
     };
     const jpg = await blob.arrayBuffer(); // 先に読む（保存の手続きを開いたまま待つと、手続きが閉じてしまう）
     await req(this.db.transaction(STORE, 'readwrite').objectStore(STORE).add({ meta, jpg }));

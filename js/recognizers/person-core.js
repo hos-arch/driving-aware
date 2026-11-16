@@ -9,6 +9,10 @@ export const PERSON_DEFAULTS = {
   highScore: 0.5, // これ以上で、続けて見つかったものを「検出」とする
   nmsIou: 0.45,
   staleMs: 2500, // これより古い結果は使わない
+  // 車（乗用車・バス・トラック）の枠の中に出た人の枠は外す（前の車の窓、車の中の人）
+  vehicleScore: 0.3,
+  vehicleInside: 0.9, // 人の枠のうち、これ以上の割合が車の枠の中にあり、
+  vehicleBottom: 0.2, // 人の枠の下端が、車の枠の下端より（車の高さの）この割合以上は上にあるとき
 };
 
 /** 映像のどこを見るか。戻り値は映像全体に対する比（x, y, w, h）の配列。横向きで 3 枚、縦向きで 2 枚。 */
@@ -55,31 +59,72 @@ function iou(a, b) {
 }
 export { iou };
 
-/** モデルの出力から、人の枠（タイル内の画素。x, y は左上）を取り出す。 */
-export function decodePersons(out, opts = {}) {
+const PERSON_CLASS = 0;
+const VEHICLE_CLASSES = [2, 5, 7]; // COCO: 乗用車、バス、トラック
+
+function nms(cands, limit) {
+  cands.sort((a, b) => b.s - a.s);
+  const keep = [];
+  for (const c of cands) {
+    if (keep.every((k) => iou(k, c) <= limit)) keep.push(c);
+  }
+  return keep;
+}
+
+/** モデルの出力から、人と車の枠（タイル内の画素。x, y は左上）を取り出す。 */
+export function decodeAll(out, opts = {}) {
   const o = { ...PERSON_DEFAULTS, ...opts };
   const C = 85;
-  const cands = [];
+  const persons = [];
+  const vehicles = [];
   let row = 0;
   for (const stride of [8, 16, 32]) {
     const g = TILE / stride;
     for (let gy = 0; gy < g; gy++) {
       for (let gx = 0; gx < g; gx++, row++) {
         const p = row * C;
-        const score = out[p + 4] * out[p + 5]; // 物らしさ × 「人」の確からしさ
-        if (score < o.lowScore) continue;
+        const obj = out[p + 4];
+        if (obj < Math.min(o.lowScore, o.vehicleScore)) continue; // 物らしさが低ければ、どの種類でも届かない
+        const ps = obj * out[p + 5 + PERSON_CLASS]; // 物らしさ × 「人」の確からしさ
+        let vs = 0;
+        for (const c of VEHICLE_CLASSES) vs = Math.max(vs, obj * out[p + 5 + c]);
+        if (ps < o.lowScore && vs < o.vehicleScore) continue;
         const w = Math.exp(out[p + 2]) * stride;
         const h = Math.exp(out[p + 3]) * stride;
-        cands.push({ x: (out[p] + gx) * stride - w / 2, y: (out[p + 1] + gy) * stride - h / 2, w, h, s: score });
+        const box = { x: (out[p] + gx) * stride - w / 2, y: (out[p + 1] + gy) * stride - h / 2, w, h };
+        if (ps >= o.lowScore) persons.push({ ...box, s: ps });
+        if (vs >= o.vehicleScore) vehicles.push({ ...box, s: vs });
       }
     }
   }
-  cands.sort((a, b) => b.s - a.s);
-  const keep = [];
-  for (const c of cands) {
-    if (keep.every((k) => iou(k, c) <= o.nmsIou)) keep.push(c);
+  return { persons: nms(persons, o.nmsIou), vehicles: nms(vehicles, o.nmsIou) };
+}
+
+/**
+ * 車の枠の中に出た人の枠を外す。前の車の後ろの窓や、車の中の人を、歩行者として扱わないため。
+ * 車の手前に立つ人は、足元が車の下端と同じかそれより下に写るので、外さない。
+ * 注意: 車の向こう側にいて上半身だけ見える人は、外れてしまうことがある。
+ */
+export function dropInVehicles(persons, vehicles, opts = {}) {
+  const o = { ...PERSON_DEFAULTS, ...opts };
+  const kept = [];
+  const dropped = [];
+  for (const p of persons) {
+    const hit = vehicles.some((v) => {
+      const ix = Math.min(p.x + p.w, v.x + v.w) - Math.max(p.x, v.x);
+      const iy = Math.min(p.y + p.h, v.y + v.h) - Math.max(p.y, v.y);
+      if (ix <= 0 || iy <= 0) return false;
+      return (ix * iy) / (p.w * p.h) >= o.vehicleInside && p.y + p.h < v.y + v.h * (1 - o.vehicleBottom);
+    });
+    (hit ? dropped : kept).push(p);
   }
-  return keep;
+  return { kept, dropped };
+}
+
+/** モデルの出力から、人の枠だけを取り出す（車の中に出た枠は外したあと）。 */
+export function decodePersons(out, opts = {}) {
+  const { persons, vehicles } = decodeAll(out, opts);
+  return dropInVehicles(persons, vehicles, opts).kept;
 }
 
 /** タイル内の画素の枠を、映像全体に対する比に直す。tile は切り出した範囲（映像全体に対する比）、tileW・tileH は切り出した画像の大きさ。 */
