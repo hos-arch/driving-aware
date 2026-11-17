@@ -8,6 +8,8 @@ import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
 import { drawOverlay } from './overlay.js';
 import { loadOrtDetector, personModelName, setPersonModel, MODEL_LABELS } from './recognizers/person-ort.js';
 import { Capture } from './capture.js';
+import { assess, WarnHolder, LEVELS } from './danger-core.js';
+import { Beeper } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,6 +27,9 @@ let camState = 'stopped'; // stopped | starting | ok | <失敗の種類>
 let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（幅に対する比）。未設定なら null
 let lastLane = null;
 let lastPerson = null;
+let lastDanger = null; // 人の危険判定の結果（映像に重ねる用）
+const warnHolder = new WarnHolder();
+const beeper = new Beeper();
 let personModel = personModelName(); // いま選んでいる人の検出モデル（nano | tiny）
 let personInfo = null; // 読み込み済みのモデルの名前とスレッド数（読み込み中は null）
 let clearArmedAt = 0; // 「消去」を 1 回押した時刻（もう一度押すと消す）
@@ -82,7 +87,28 @@ function renderRecognizers(results) {
     row.querySelector('.detail').textContent = res.detail ? `（${res.detail}）` : '';
   }
   lastPerson = results.pedestrian ? results.pedestrian.person : null;
-  renderLane(results.lane ? results.lane.lane : null);
+  const lane = results.lane ? results.lane.lane : null;
+  renderWarn(lane);
+  renderLane(lane);
+}
+
+const WARN_TEXT = { [LEVELS.NEAR]: '前方に人', [LEVELS.CAUTION]: '人 注意', [LEVELS.DANGER]: '人 危険' };
+
+function currentKmh() {
+  const desc = describeGps({ ...gps.snapshot(), now: Date.now() });
+  return desc.kind === 'ok' ? msToKmh(gps.speedMs) : null;
+}
+
+// 人の危険判定: 検出した人が、自分の車線（とその少し外側）の中にいるかを見て、表示と音で知らせる。
+// 何も出ないことは、安全を意味しない（見ているのは人の検出の範囲だけで、見落としもある）。
+function renderWarn(lane) {
+  lastDanger = assess(lastPerson ? lastPerson.items : [], lane, currentKmh());
+  const level = warnHolder.update(lastDanger.level, performance.now());
+  const el = $('warn');
+  el.hidden = level === LEVELS.NONE;
+  el.dataset.level = level;
+  el.textContent = WARN_TEXT[level] ?? '';
+  beeper.setLevel(level);
 }
 
 // 車線: 映像への重ね描きと、車線内の位置
@@ -90,7 +116,7 @@ function renderLane(lane) {
   lastLane = lane;
   const both = !!(lane && lane.left && lane.right);
   const carX = both && refDx != null ? (0.5 + refDx) * lane.frameW : null;
-  drawOverlay($('overlay'), $('cam'), lane, carX, lastPerson);
+  drawOverlay($('overlay'), $('cam'), lane, carX, lastPerson, lastDanger);
 
   const dot = $('laneDot');
   const text = $('lanePosText');
@@ -232,6 +258,7 @@ $('startBtn').addEventListener('click', () => {
   $('start').hidden = true;
   $('hud').hidden = false;
   // 以下はユーザー操作の中で開始する（iOS Safari の要件）
+  beeper.unlock(); // 警告音を出せるようにし、確認の音を 1 回鳴らす
   wakeLock.request();
   gps.start();
   startCamera();

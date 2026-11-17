@@ -38,7 +38,34 @@ function drawPersons(ctx, person, ox, oy, dw, dh) {
   ctx.restore();
 }
 
-export function drawOverlay(canvas, video, lane, carX, person) {
+const DANGER_COLORS = { near: '#ffd43b', caution: '#ffd43b', danger: '#ff4d4d' };
+
+// 人の危険判定。細い白線は、判定に使っている「通り道」（車線とその少し外側）。
+// 通り道の中にいる人は、黄色（注意）か赤（危険）の太い枠で囲む。
+function drawDanger(ctx, danger, mx, my, ox, oy, dw, dh) {
+  if (!danger || !danger.corridor) return;
+  const c = danger.corridor;
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([2, 6]);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+  for (const xb of [c.xl, c.xr]) {
+    // 余裕（margin）を含まない、車線そのものの線を、消失点の少し手前まで描く
+    ctx.beginPath();
+    ctx.moveTo(mx(xb), my(c.yb));
+    ctx.lineTo(mx(c.vx + (xb - c.vx) * 0.12), my(c.vy + (c.yb - c.vy) * 0.12));
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.lineWidth = 5;
+  for (const t of danger.targets) {
+    ctx.strokeStyle = DANGER_COLORS[t.level] ?? DANGER_COLORS.caution;
+    ctx.strokeRect(ox + t.x * dw - 5, oy + t.y * dh - 5, t.w * dw + 10, t.h * dh + 10);
+  }
+  ctx.restore();
+}
+
+export function drawOverlay(canvas, video, lane, carX, person, danger) {
   const dpr = window.devicePixelRatio || 1;
   const cw = canvas.clientWidth;
   const ch = canvas.clientHeight;
@@ -60,6 +87,7 @@ export function drawOverlay(canvas, video, lane, carX, person) {
   if (!lane) return;
   const mx = (fx) => ox + (fx / lane.frameW) * vw * sc;
   const my = (fy) => oy + (fy / lane.frameH) * vh * sc;
+  drawDanger(ctx, danger, mx, my, ox, oy, vw * sc, vh * sc);
 
   // 探索範囲（どこを見て判定しているかを示す）
   const top = my(lane.roi[0]);

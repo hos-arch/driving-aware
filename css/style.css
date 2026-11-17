@@ -290,3 +290,26 @@ html, body {
 }
 
 .capbtns { display: inline-flex; gap: 6px; }
+
+/* 人の警告。速度の下に大きく出す（ほかの表示に重ならない場所） */
+.speed-block { position: relative; }
+.warn {
+  /* 速度の表示を動かさないよう、場所を取らずに重ねる */
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 6px 20px;
+  border-radius: 12px;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #111;
+  background: #ffd43b;
+  border: 3px solid #111;
+}
+.warn[data-level="near"] { font-size: 1.3rem; background: rgba(255, 212, 59, 0.85); }
+.warn[data-level="danger"] { color: #fff; background: #e03131; border-color: #fff; }
+.warn[hidden] { display: none; }
