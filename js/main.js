@@ -93,6 +93,8 @@ function renderRecognizers(results) {
 }
 
 const WARN_TEXT = { [LEVELS.NEAR]: '前方に人', [LEVELS.CAUTION]: '人 注意', [LEVELS.DANGER]: '人 危険' };
+// 「前方に人」にとどめた理由。音は鳴らない
+const WARN_NOTE = { nospeed: '（速さ不明）', assumed: '（車線不明）', slow: '（徐行）' };
 
 function currentKmh() {
   const desc = describeGps({ ...gps.snapshot(), now: Date.now() });
@@ -107,7 +109,7 @@ function renderWarn(lane) {
   const el = $('warn');
   el.hidden = level === LEVELS.NONE;
   el.dataset.level = level;
-  el.textContent = WARN_TEXT[level] ?? '';
+  el.textContent = level === LEVELS.NEAR ? `${WARN_TEXT[level]}${WARN_NOTE[lastDanger.reason] ?? ''}` : (WARN_TEXT[level] ?? '');
   beeper.setLevel(level);
 }
 

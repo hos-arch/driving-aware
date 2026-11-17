@@ -42,11 +42,26 @@ test('assess: 車線の中の人は対象、歩道の人は対象外', () => {
   assert.equal(assess([sidewalk], lane, 40).level, LEVELS.NONE);
 });
 
-test('assess: 近くて速いと「危険」、遠いと「注意」、ゆっくりなら音なしの「近く」', () => {
+test('assess: 近くて速いと「危険」、遠いと「注意」', () => {
   assert.equal(assess([person(320, 260)], lane, 40).level, LEVELS.DANGER);
   assert.equal(assess([person(322, 176, 14)], lane, 20).level, LEVELS.CAUTION);
-  assert.equal(assess([person(320, 260)], lane, 3).level, LEVELS.NEAR);
-  assert.equal(assess([person(320, 260)], lane, null).level, LEVELS.CAUTION); // 速さが不明なら、動いているものとして扱う
+});
+
+test('assess: 停車中（3 km/h 未満）は何も出さない', () => {
+  assert.equal(assess([person(320, 260)], lane, 0).level, LEVELS.NONE);
+  assert.equal(assess([person(320, 260)], lane, 2.9).level, LEVELS.NONE);
+});
+
+test('assess: 徐行（3〜10 km/h）は、音なしの「前方に人」だけ', () => {
+  const r = assess([person(320, 260)], lane, 5);
+  assert.equal(r.level, LEVELS.NEAR);
+  assert.equal(r.reason, 'slow');
+});
+
+test('assess: 速さが分からないときは、音なしの「前方に人」だけ（動いているとは決めつけない）', () => {
+  const r = assess([person(320, 260)], lane, null);
+  assert.equal(r.level, LEVELS.NEAR);
+  assert.equal(r.reason, 'nospeed');
 });
 
 test('assess: まだ確かでない枠（confirmed でない）は対象にしない。車線の結果が無ければ判定しない', () => {
@@ -54,10 +69,19 @@ test('assess: まだ確かでない枠（confirmed でない）は対象にし�
   assert.equal(assess([person(320, 260)], null, 40).level, LEVELS.NONE);
 });
 
-test('assess: 車線が見つからなくても、仮の通り道で判定する', () => {
-  const r = assess([person(320, 250)], { ...lane, left: null, right: null }, 40);
+test('assess: 車線が見つからないとき（駐車場など）は、速くても音は出さず、「前方に人（車線不明）」だけ', () => {
+  const noLane = { ...lane, left: null, right: null };
+  const r = assess([person(320, 260)], noLane, 40);
   assert.equal(r.basis, 'assumed');
-  assert.notEqual(r.level, LEVELS.NONE);
+  assert.equal(r.level, LEVELS.NEAR);
+  assert.equal(r.reason, 'assumed');
+  assert.equal(assess([person(320, 260)], noLane, 1).level, LEVELS.NONE); // 停車中は何も出さない
+});
+
+test('assess: 片側の車線だけでも見つかっていれば、音つきの警告を出す', () => {
+  const r = assess([person(320, 260)], { ...lane, right: null }, 40);
+  assert.equal(r.basis, 'one');
+  assert.equal(r.level, LEVELS.DANGER);
 });
 
 test('WarnHolder: 上がるのはすぐ、下がるのは少し待ってから', () => {

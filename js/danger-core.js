@@ -10,7 +10,8 @@ export const DANGER_DEFAULTS = {
   camHeightM: 1.2, // カメラの高さ（仮の値）
   laneHalfM: 1.75, // 車線が見つからないときに使う、車線の半分の幅（仮の値）
   hfovDeg: 63, // カメラの横の画角（仮の値。映像の長い辺の方向）
-  minSpeedKmh: 10, // これ未満の速さでは、音を鳴らさない（信号待ちや徐行）
+  standKmh: 3, // これ未満の速さ（停車中）では、何も出さない
+  minSpeedKmh: 10, // これ未満の速さでは、音を鳴らさない（徐行）
   dangerSec: 4, // 届くまでの目安がこれ未満なら「危険」
   holdMs: 1500, // 条件を外れても、この時間は表示を続ける（ちらつき防止）
 };
@@ -60,16 +61,29 @@ export function roughDistanceM(footY, vy, frameW, frameH, opts = {}) {
 
 /**
  * persons: [{ x, y, w, h, confirmed }]（映像全体に対する比）。confirmed のものだけを見る。
- * speedKmh: GPS の速さ。分からないときは null（そのときは、動いているものとして扱う）。
- * 戻り値: { level, targets: [{ ...person, level, seconds }], basis }
+ * speedKmh: GPS の速さ。分からないときは null。
+ *
+ * 音つきの「注意」「危険」を出すのは、次の 3 つがそろったときだけ。
+ *   - 速さが分かっていて、minSpeedKmh 以上である
+ *   - 車線を実際に見つけている（片側だけでもよい）。駐車場や、線のない道では、通り道が仮のものになるので出さない
+ *   - 人が通り道の中にいる
+ * 速さが分からないとき、車線が見つからないとき、徐行（standKmh 以上 minSpeedKmh 未満）のときは、表示だけの「前方に人」にとどめる。
+ * 停車中（standKmh 未満）は何も出さない。
+ *
+ * 戻り値: { level, targets: [{ ...person, level, seconds }], basis, reason }
+ *   reason: 'nospeed' | 'assumed' | 'slow' | null  「前方に人」にとどめた理由
  */
 export function assess(persons, lane, speedKmh, opts = {}) {
   const o = { ...DANGER_DEFAULTS, ...opts };
-  if (!lane || !lane.vp || !lane.roi) return { level: LEVELS.NONE, targets: [], basis: null };
+  if (!lane || !lane.vp || !lane.roi) return { level: LEVELS.NONE, targets: [], basis: null, reason: null };
   const c = corridor(lane, o);
   const W = lane.frameW;
   const H = lane.frameH;
-  const moving = speedKmh == null || speedKmh >= o.minSpeedKmh;
+  if (speedKmh != null && speedKmh < o.standKmh) return { level: LEVELS.NONE, targets: [], basis: c.basis, reason: null, corridor: c };
+  let reason = null;
+  if (speedKmh == null) reason = 'nospeed';
+  else if (c.basis === 'assumed') reason = 'assumed';
+  else if (speedKmh < o.minSpeedKmh) reason = 'slow';
   const targets = [];
   let level = LEVELS.NONE;
   for (const p of persons ?? []) {
@@ -81,17 +95,15 @@ export function assess(persons, lane, speedKmh, opts = {}) {
     if (!span || fx + (p.w * W) / 2 < span.left || fx - (p.w * W) / 2 > span.right) continue;
     let lv = LEVELS.NEAR;
     let seconds = null;
-    if (moving) {
+    if (!reason) {
       lv = LEVELS.CAUTION;
-      if (speedKmh != null && speedKmh > 0) {
-        seconds = roughDistanceM(fy, c.vy, W, H, o) / (speedKmh / 3.6);
-        if (seconds < o.dangerSec) lv = LEVELS.DANGER;
-      }
+      seconds = roughDistanceM(fy, c.vy, W, H, o) / (speedKmh / 3.6);
+      if (seconds < o.dangerSec) lv = LEVELS.DANGER;
     }
     targets.push({ ...p, level: lv, seconds });
     if (RANK[lv] > RANK[level]) level = lv;
   }
-  return { level, targets, basis: c.basis, corridor: c };
+  return { level, targets, basis: c.basis, reason: level === LEVELS.NEAR ? reason : null, corridor: c };
 }
 
 /** 表示のちらつきを防ぐ。条件を外れても holdMs の間は、最後の段階を保つ（上がるのはすぐ）。 */
