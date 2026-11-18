@@ -2,23 +2,29 @@
 // iOS Safari では、利用者の操作（「開始」を押す）の中で一度鳴らす準備をしないと、音が出ない。
 // 端末が消音（マナーモード）や音量 0 のときは鳴らない。
 
-// 音色: 'band' は帯域を絞ったノイズ（サンプルの「ふくらみのある音」に近い）。
+// 音色: 'band' は帯域を絞ったノイズ（録音の「ふくらみのある音」に近い）。
+// hz2 があれば、音の高さを hz から hz2 へ少しずつ変える。
 // 'square' は従来のピーという電子音。
+// 時間は録音（利用者が持ってきた警告音）から測った形。ms は 1 つの音の長さ。
 export const PATTERNS = {
-  // 注意: 中くらいの高さの短い音を 2 回（低め→少し高め）。2.5 秒ごとにくり返す
-  caution: { everyMs: 2500, beeps: [{ at: 0, ms: 80, hz: 580, type: 'band' }, { at: 0.25, ms: 80, hz: 700, type: 'band' }] },
-  // 危険: 注意の 2 回に、低めの短い音の連続 5 回がつづく。2.2 秒ごとにくり返す
-  // （利用者が持ってきた警告音のサンプルを測って、高さと間隔を近づけた）
+  // 注意: 録音の最初の 2 つの音
+  caution: {
+    everyMs: 2500,
+    beeps: [
+      { at: 0, ms: 50, hz: 580, hz2: 530, type: 'band' },
+      { at: 0.25, ms: 50, hz: 660, hz2: 750, type: 'band' },
+    ],
+  },
+  // 危険: 録音の音をすべて（2.0 秒ぶん）。2.2 秒ごとにくり返す
   danger: {
     everyMs: 2200,
     beeps: [
-      { at: 0, ms: 80, hz: 580, type: 'band' },
-      { at: 0.25, ms: 80, hz: 700, type: 'band' },
-      { at: 0.7, ms: 60, hz: 460, type: 'band' },
-      { at: 0.8, ms: 60, hz: 480, type: 'band' },
-      { at: 0.95, ms: 60, hz: 520, type: 'band' },
-      { at: 1.05, ms: 60, hz: 520, type: 'band' },
-      { at: 1.2, ms: 60, hz: 560, type: 'band' },
+      { at: 0, ms: 50, hz: 580, hz2: 530, type: 'band' },
+      { at: 0.25, ms: 50, hz: 660, hz2: 750, type: 'band' },
+      { at: 0.67, ms: 60, hz: 510, hz2: 460, type: 'band' },
+      { at: 0.8, ms: 50, hz: 490, hz2: 570, type: 'band' },
+      { at: 1.05, ms: 45, hz: 540, hz2: 530, type: 'band' },
+      { at: 1.18, ms: 40, hz: 770, hz2: 920, type: 'band' },
     ],
   },
 };
@@ -37,7 +43,7 @@ export class Beeper {
       if (!AC) return false;
       if (!this.ctx) this.ctx = new AC();
       if (this.ctx.state === 'suspended') this.ctx.resume();
-      this.tone(0, 120, 660, 0.25, 'band');
+      this.tone(0, 120, 660, 0.25, "band");
       return true;
     } catch (err) {
       console.error('[audio]', err);
@@ -60,7 +66,7 @@ export class Beeper {
     return buf;
   }
 
-  tone(at, ms, hz, volume = 0.6, type = 'square') {
+  tone(at, ms, hz, volume = 0.6, type = 'square', hz2 = null) {
     const ctx = this.ctx;
     if (!ctx) return;
     const t0 = ctx.currentTime + at;
@@ -73,7 +79,8 @@ export class Beeper {
       src.loop = true;
       const filter = ctx.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.value = hz;
+      filter.frequency.setValueAtTime(hz, t0);
+      if (hz2 && hz2 !== hz) filter.frequency.linearRampToValueAtTime(hz2, t0 + ms / 1000);
       filter.Q.value = 5;
       src.connect(filter).connect(gain);
       volume *= 2.5;
@@ -96,7 +103,7 @@ export class Beeper {
     const p = PATTERNS[level];
     if (!p || !this.ctx) return;
     if (this.ctx.state === 'suspended') this.ctx.resume();
-    for (const b of p.beeps) this.tone(b.at, b.ms, b.hz, 0.6, b.type);
+    for (const b of p.beeps) this.tone(b.at, b.ms, b.hz, 0.6, b.type, b.hz2);
   }
 
   /** 'caution' と 'danger' のときだけ鳴らす。同じ段階が続く間は、決まった間隔でくり返す。 */
