@@ -20,3 +20,11 @@ test('警告音: 注意と危険の 2 種類があり、くり返しの間隔の
 test('警告音: 危険は注意より音が多い（聞き分けられる）', () => {
   assert.ok(PATTERNS.danger.beeps.length > PATTERNS.caution.beeps.length);
 });
+
+test('警告音: 音色は帯域ノイズかピーという音のどちらか', () => {
+  for (const level of ['caution', 'danger']) {
+    for (const b of PATTERNS[level].beeps) {
+      assert.ok(b.type === undefined || b.type === 'band' || b.type === 'square');
+    }
+  }
+});
