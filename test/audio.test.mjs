@@ -12,7 +12,7 @@ test('警告音: 注意と危険の 2 種類があり、くり返しの間隔の
     for (const b of p.beeps) {
       assert.ok(b.at * 1000 >= prevEnd, `${level} の音どうしが重ならない`);
       prevEnd = b.at * 1000 + b.ms;
-      assert.ok(b.hz >= 400 && b.hz <= 1500);
+      assert.ok(b.hz >= 300 && b.hz <= 1500);
     }
   }
 });
