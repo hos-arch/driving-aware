@@ -24,7 +24,7 @@ test('警告音: 危険は注意より音が多い（聞き分けられる）', 
 test('警告音: 音色は帯域ノイズかピーという音のどちらか', () => {
   for (const level of ['caution', 'danger']) {
     for (const b of PATTERNS[level].beeps) {
-      assert.ok(b.type === undefined || b.type === 'band' || b.type === 'square');
+      assert.ok(b.type === undefined || b.type === 'sine' || b.type === 'band' || b.type === 'square');
     }
   }
 });

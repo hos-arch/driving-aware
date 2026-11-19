@@ -2,29 +2,29 @@
 // iOS Safari では、利用者の操作（「開始」を押す）の中で一度鳴らす準備をしないと、音が出ない。
 // 端末が消音（マナーモード）や音量 0 のときは鳴らない。
 
-// 音色: 'band' は帯域を絞ったノイズ（録音の「ふくらみのある音」に近い）。
-// hz2 があれば、音の高さを hz から hz2 へ少しずつ変える。
-// 'square' は従来のピーという電子音。
-// 時間は録音（利用者が持ってきた警告音）から測った形。ms は 1 つの音の長さ。
+// 音色: 'sine' は澄んだサイン波（2 倍音を少しだけ足す）。穏やかな電子音。
+// hz から hz2 へ、音の高さを少しずつ変える。音の立ち上がりと消え方は丸くする。
+// 時間と高さは、利用者が持ってきた録音（12）から測った形。高さは 0.8 倍（音程を下げた）。
+// 'square' は従来のピーという電子音、'band' は帯域ノイズ（今は使っていない）。
+const PITCH = 0.8;
+const S = (at, ms, hz, hz2) => ({ at, ms, hz: hz * PITCH, hz2: hz2 * PITCH, type: 'sine' });
+
 export const PATTERNS = {
   // 注意: 録音の最初の 2 つの音
   caution: {
     everyMs: 2500,
-    beeps: [
-      { at: 0, ms: 50, hz: 580, hz2: 530, type: 'band' },
-      { at: 0.25, ms: 50, hz: 660, hz2: 750, type: 'band' },
-    ],
+    beeps: [S(0, 50, 580, 530), S(0.25, 50, 660, 750)],
   },
-  // 危険: 録音の音をすべて（2.0 秒ぶん）。2.2 秒ごとにくり返す
+  // 危険: 録音の音をすべて（1.5 秒ぶん）。2.2 秒ごとにくり返す
   danger: {
     everyMs: 2200,
     beeps: [
-      { at: 0, ms: 50, hz: 580, hz2: 530, type: 'band' },
-      { at: 0.25, ms: 50, hz: 660, hz2: 750, type: 'band' },
-      { at: 0.67, ms: 60, hz: 510, hz2: 460, type: 'band' },
-      { at: 0.8, ms: 50, hz: 490, hz2: 570, type: 'band' },
-      { at: 1.05, ms: 45, hz: 540, hz2: 530, type: 'band' },
-      { at: 1.18, ms: 40, hz: 770, hz2: 920, type: 'band' },
+      S(0, 50, 580, 530),
+      S(0.25, 50, 660, 750),
+      S(0.67, 60, 510, 460),
+      S(0.8, 50, 490, 570),
+      S(1.05, 45, 540, 530),
+      S(1.18, 40, 770, 920),
     ],
   },
 };
@@ -72,6 +72,33 @@ export class Beeper {
     const t0 = ctx.currentTime + at;
     const gain = ctx.createGain();
     let src;
+    if (type === 'sine') {
+      // 澄んだサイン波。2 倍音を少しだけ足す。音量の山は sin^1.5 の丸い形
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(hz, t0);
+      if (hz2 && hz2 !== hz) osc.frequency.linearRampToValueAtTime(hz2, t0 + ms / 1000);
+      const h2 = ctx.createOscillator();
+      h2.type = 'sine';
+      h2.frequency.setValueAtTime(hz * 2, t0);
+      if (hz2 && hz2 !== hz) h2.frequency.linearRampToValueAtTime(hz2 * 2, t0 + ms / 1000);
+      const h2gain = ctx.createGain();
+      h2gain.gain.value = 0.15;
+      osc.connect(gain);
+      h2.connect(h2gain).connect(gain);
+      const curve = new Float32Array(64);
+      for (let i = 0; i < curve.length; i++) {
+        curve[i] = volume * Math.sin(Math.PI * (i / (curve.length - 1))) ** 1.5;
+      }
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.setValueCurveAtTime(curve, t0, ms / 1000);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      h2.start(t0);
+      osc.stop(t0 + ms / 1000 + 0.02);
+      h2.stop(t0 + ms / 1000 + 0.02);
+      return;
+    }
     if (type === 'band') {
       // 帯域を絞ったノイズ: 中心の高さのまわりだけを通す
       src = ctx.createBufferSource();
