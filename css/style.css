@@ -267,7 +267,8 @@ html, body {
     grid-template-rows: auto 1fr auto auto auto;
     column-gap: 20px;
   }
-  .speed-block { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+  /* 速さの数字はやめたので、警告と GPS の状態は左上に寄せる（道路の上に重ねない） */
+  .speed-block { grid-column: 1; grid-row: 1 / span 2; align-self: start; text-align: left; }
   .limit-block { grid-column: 2; grid-row: 1; }
   .status { grid-column: 2; grid-row: 2; }
   .lanepos { grid-column: 2; grid-row: 3; }
@@ -294,12 +295,9 @@ html, body {
 /* 人の警告。速度の下に大きく出す（ほかの表示に重ならない場所） */
 .speed-block { position: relative; }
 .warn {
-  /* 速度の表示を動かさないよう、場所を取らずに重ねる */
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
+  /* 速さの数字はやめたので、GPS の受信状態の下にそのまま並べる */
+  display: inline-block;
+  margin-top: 8px;
   padding: 6px 20px;
   border-radius: 12px;
   font-size: 2rem;

@@ -1,6 +1,6 @@
 // 速度の変換・表示と GPS 状態の判定（DOM に依存しない純粋関数）
 
-export const GPS_STALE_MS = 5000;
+export const GPS_STALE_MS = 10000; // GPS は 3 秒ごとに問い合わせる。取得にかかる時間も見込む
 
 /** m/s → km/h。取得できていない値は 0 にせず null を返す。 */
 export function msToKmh(ms) {

@@ -14,6 +14,7 @@ export const DANGER_DEFAULTS = {
   minSpeedKmh: 10, // これ未満の速さでは、音を鳴らさない（徐行）
   dangerSec: 4, // 届くまでの目安がこれ未満なら「危険」
   holdMs: 1500, // 条件を外れても、この時間は表示を続ける（ちらつき防止）
+  crosswalkWiden: 1.5, // 横断歩道が見えているときは、通り道の幅（margin）をこの倍にする。渡ってくる人を早めに対象にするため
 };
 
 export const LEVELS = { NONE: 'none', NEAR: 'near', CAUTION: 'caution', DANGER: 'danger' };
@@ -70,16 +71,19 @@ export function roughDistanceM(footY, vy, frameW, frameH, opts = {}) {
  * 速さが分からないとき、車線が見つからないとき、徐行（standKmh 以上 minSpeedKmh 未満）のときは、表示だけの「前方に人」にとどめる。
  * 停車中（standKmh 未満）は何も出さない。
  *
- * 戻り値: { level, targets: [{ ...person, level, seconds }], basis, reason }
+ * opts.crosswalk: 横断歩道が見えているとき true。通り道の幅（margin）を crosswalkWiden 倍にする。
+ *
+ * 戻り値: { level, targets: [{ ...person, level, seconds }], basis, reason, corridor, margin }
  *   reason: 'nospeed' | 'assumed' | 'slow' | null  「前方に人」にとどめた理由
  */
 export function assess(persons, lane, speedKmh, opts = {}) {
   const o = { ...DANGER_DEFAULTS, ...opts };
+  if (opts.crosswalk) o.margin *= o.crosswalkWiden;
   if (!lane || !lane.vp || !lane.roi) return { level: LEVELS.NONE, targets: [], basis: null, reason: null };
   const c = corridor(lane, o);
   const W = lane.frameW;
   const H = lane.frameH;
-  if (speedKmh != null && speedKmh < o.standKmh) return { level: LEVELS.NONE, targets: [], basis: c.basis, reason: null, corridor: c };
+  if (speedKmh != null && speedKmh < o.standKmh) return { level: LEVELS.NONE, targets: [], basis: c.basis, reason: null, corridor: c, margin: o.margin };
   let reason = null;
   if (speedKmh == null) reason = 'nospeed';
   else if (c.basis === 'assumed') reason = 'assumed';
@@ -103,7 +107,7 @@ export function assess(persons, lane, speedKmh, opts = {}) {
     targets.push({ ...p, level: lv, seconds });
     if (RANK[lv] > RANK[level]) level = lv;
   }
-  return { level, targets, basis: c.basis, reason: level === LEVELS.NEAR ? reason : null, corridor: c };
+  return { level, targets, basis: c.basis, reason: level === LEVELS.NEAR ? reason : null, corridor: c, margin: o.margin };
 }
 
 /** 表示のちらつきを防ぐ。条件を外れても holdMs の間は、最後の段階を保つ（上がるのはすぐ）。 */

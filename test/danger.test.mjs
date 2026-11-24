@@ -92,3 +92,14 @@ test('WarnHolder: 上がるのはすぐ、下がるのは少し待ってから',
   assert.equal(h.update(LEVELS.CAUTION, 1000), LEVELS.DANGER);
   assert.equal(h.update(LEVELS.NONE, 1700), LEVELS.NONE);
 });
+
+test('assess: 横断歩道が見えているときは、通り道を 1.5 倍に広げる（少し外の人も対象になる）', async () => {
+  const { assess: a2, DANGER_DEFAULTS: D } = await import('../js/danger-core.js');
+  const lane = { frameW: 640, frameH: 360, roi: [162, 270], vp: [320, 166], left: { xb: 200 }, right: { xb: 440 } };
+  // 足元 y=270（0.75）。通り道は 200〜440、余裕 1.4 倍で 152〜488、1.5 倍にすると 2.1 倍で 68〜572
+  const p = { x: 520 / 640, y: 0.55, w: 20 / 640, h: 0.2, confirmed: true };
+  assert.equal(a2([p], lane, 30).level, 'none');
+  const r = a2([p], lane, 30, { crosswalk: true });
+  assert.notEqual(r.level, 'none');
+  assert.ok(Math.abs(r.margin - D.margin * D.crosswalkWiden) < 1e-9);
+});

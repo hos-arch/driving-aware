@@ -3,7 +3,7 @@ import { Gps } from './gps.js';
 import { WakeLock } from './wakelock.js';
 import { Pipeline } from './pipeline.js';
 import { createRecognizers, STATES } from './recognizers/index.js';
-import { msToKmh, formatSpeed, describeGps } from './format.js';
+import { msToKmh, describeGps } from './format.js';
 import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
 import { drawOverlay } from './overlay.js';
 import { loadOrtDetector, personModelName, setPersonModel, MODEL_LABELS } from './recognizers/person-ort.js';
@@ -28,6 +28,7 @@ let refDx = getRefDx(); // 自車の中心の、画像中心からのずれ（�
 let lastLane = null;
 let lastPerson = null;
 let lastDanger = null; // 人の危険判定の結果（映像に重ねる用）
+let lastCrosswalk = null; // 横断歩道の結果 { on, box }
 const warnHolder = new WarnHolder();
 const beeper = new Beeper();
 let personModel = personModelName(); // いま選んでいる人の検出モデル（nano | tiny）
@@ -67,10 +68,7 @@ const pipeline = new Pipeline($('cam'), recognizers, {
 // --- 描画 -------------------------------------------------------------
 function renderSpeed() {
   const desc = describeGps({ ...gps.snapshot(), now: Date.now() });
-  const kmh = desc.kind === 'ok' ? msToKmh(gps.speedMs) : null;
-
-  $('speed').textContent = formatSpeed(kmh);
-  $('speed').dataset.state = kmh == null ? 'unknown' : 'ok';
+  // 速さの数字は表示しない（制限速度と比べられないため）。GPS の受信状態だけ出す
   $('gpsNote').textContent = desc.text;
 
   return desc;
@@ -87,6 +85,7 @@ function renderRecognizers(results) {
     row.querySelector('.detail').textContent = res.detail ? `（${res.detail}）` : '';
   }
   lastPerson = results.pedestrian ? results.pedestrian.person : null;
+  lastCrosswalk = results.crosswalk ? results.crosswalk.crosswalk : null;
   const lane = results.lane ? results.lane.lane : null;
   renderWarn(lane);
   renderLane(lane);
@@ -104,7 +103,7 @@ function currentKmh() {
 // 人の危険判定: 検出した人が、自分の車線（とその少し外側）の中にいるかを見て、表示と音で知らせる。
 // 何も出ないことは、安全を意味しない（見ているのは人の検出の範囲だけで、見落としもある）。
 function renderWarn(lane) {
-  lastDanger = assess(lastPerson ? lastPerson.items : [], lane, currentKmh());
+  lastDanger = assess(lastPerson ? lastPerson.items : [], lane, currentKmh(), { crosswalk: !!(lastCrosswalk && lastCrosswalk.on) });
   const level = warnHolder.update(lastDanger.level, performance.now());
   const el = $('warn');
   el.hidden = level === LEVELS.NONE;
@@ -118,7 +117,7 @@ function renderLane(lane) {
   lastLane = lane;
   const both = !!(lane && lane.left && lane.right);
   const carX = both && refDx != null ? (0.5 + refDx) * lane.frameW : null;
-  drawOverlay($('overlay'), $('cam'), lane, carX, lastPerson, lastDanger);
+  drawOverlay($('overlay'), $('cam'), lane, carX, lastPerson, lastDanger, lastCrosswalk);
 
   const dot = $('laneDot');
   const text = $('lanePosText');

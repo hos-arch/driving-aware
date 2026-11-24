@@ -65,7 +65,23 @@ function drawDanger(ctx, danger, mx, my, ox, oy, dw, dh) {
   ctx.restore();
 }
 
-export function drawOverlay(canvas, video, lane, carX, person, danger) {
+// 横断歩道（路面の白いしま模様）を見つけた範囲。白い点線の枠
+function drawCrosswalk(ctx, cw, ox, oy, dw, dh) {
+  if (!cw || !cw.on || !cw.box) return;
+  const b = cw.box;
+  ctx.save();
+  ctx.setLineDash([8, 5]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.strokeRect(ox + b.x * dw, oy + b.y * dh, b.w * dw, b.h * dh);
+  ctx.setLineDash([]);
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.fillText('横断歩道', ox + b.x * dw + 4, oy + b.y * dh - 5);
+  ctx.restore();
+}
+
+export function drawOverlay(canvas, video, lane, carX, person, danger, crosswalk) {
   const dpr = window.devicePixelRatio || 1;
   const cw = canvas.clientWidth;
   const ch = canvas.clientHeight;
@@ -84,6 +100,7 @@ export function drawOverlay(canvas, video, lane, carX, person, danger) {
   const ox = (cw - vw * sc) / 2;
   const oy = (ch - vh * sc) / 2;
   drawPersons(ctx, person, ox, oy, vw * sc, vh * sc);
+  drawCrosswalk(ctx, crosswalk, ox, oy, vw * sc, vh * sc);
   if (!lane) return;
   const mx = (fx) => ox + (fx / lane.frameW) * vw * sc;
   const my = (fy) => oy + (fy / lane.frameH) * vh * sc;
