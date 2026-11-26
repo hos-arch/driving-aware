@@ -1,5 +1,6 @@
 import { Camera, cameraMessage } from './camera.js';
 import { Gps } from './gps.js';
+import { Motion } from './motion.js';
 import { WakeLock } from './wakelock.js';
 import { Pipeline } from './pipeline.js';
 import { createRecognizers, STATES } from './recognizers/index.js';
@@ -8,7 +9,7 @@ import { loadLaneConfig, getRefDx, setRefDx } from './config.js';
 import { drawOverlay } from './overlay.js';
 import { loadOrtDetector, personModelName, setPersonModel, MODEL_LABELS } from './recognizers/person-ort.js';
 import { Capture } from './capture.js';
-import { assess, WarnHolder, LEVELS } from './danger-core.js';
+import { assess, WarnHolder, LEVELS, DANGER_DEFAULTS } from './danger-core.js';
 import { Beeper } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +31,7 @@ let lastPerson = null;
 let lastDanger = null; // 人の危険判定の結果（映像に重ねる用）
 let lastCrosswalk = null; // 横断歩道の結果 { on, box }
 const warnHolder = new WarnHolder();
+let heldReason = null; // 表示中の「前方に人」の理由
 const beeper = new Beeper();
 let personModel = personModelName(); // いま選んでいる人の検出モデル（nano | tiny）
 let personInfo = null; // 読み込み済みのモデルの名前とスレッド数（読み込み中は null）
@@ -43,6 +45,7 @@ const camera = new Camera($('cam'), {
   },
 });
 const gps = new Gps({ onChange: () => renderAll() });
+const motion = new Motion();
 const wakeLock = new WakeLock({ onChange: () => renderAll() });
 const capture = new Capture({ limit: 1000, onChange: () => renderCapture() });
 const recognizers = createRecognizers({
@@ -93,7 +96,7 @@ function renderRecognizers(results) {
 
 const WARN_TEXT = { [LEVELS.NEAR]: '前方に人', [LEVELS.CAUTION]: '人 注意', [LEVELS.DANGER]: '人 危険' };
 // 「前方に人」にとどめた理由。音は鳴らない
-const WARN_NOTE = { nospeed: '（速さ不明）', assumed: '（車線不明）', slow: '（徐行）' };
+const WARN_NOTE = { nospeed: '（速さ不明）', starting: '（動き出し）', assumed: '（車線不明）', slow: '（徐行）' };
 
 function currentKmh() {
   const desc = describeGps({ ...gps.snapshot(), now: Date.now() });
@@ -103,12 +106,22 @@ function currentKmh() {
 // 人の危険判定: 検出した人が、自分の車線（とその少し外側）の中にいるかを見て、表示と音で知らせる。
 // 何も出ないことは、安全を意味しない（見ているのは人の検出の範囲だけで、見落としもある）。
 function renderWarn(lane) {
-  lastDanger = assess(lastPerson ? lastPerson.items : [], lane, currentKmh(), { crosswalk: !!(lastCrosswalk && lastCrosswalk.on) });
+  // GPS は 3 秒に 1 回なので、止まっている → 動き出した、が遅れる。
+  // 最後の GPS の後に加速度センサーで動き出しを見つけたら、「止まっている」とはみなさず、速さ不明として扱う。
+  let kmh = currentKmh();
+  let starting = false;
+  if (kmh != null && kmh < DANGER_DEFAULTS.standKmh && motion.startedAfter(gps.lastUpdateAt, Date.now())) {
+    kmh = null;
+    starting = true;
+  }
+  lastDanger = assess(lastPerson ? lastPerson.items : [], lane, kmh, { crosswalk: !!(lastCrosswalk && lastCrosswalk.on), starting });
   const level = warnHolder.update(lastDanger.level, performance.now());
   const el = $('warn');
   el.hidden = level === LEVELS.NONE;
   el.dataset.level = level;
-  el.textContent = level === LEVELS.NEAR ? `${WARN_TEXT[level]}${WARN_NOTE[lastDanger.reason] ?? ''}` : (WARN_TEXT[level] ?? '');
+  // 表示を少し保っている間も、出したときの理由を残す
+  if (lastDanger.level !== LEVELS.NONE) heldReason = lastDanger.reason;
+  el.textContent = level === LEVELS.NEAR ? `${WARN_TEXT[level]}${WARN_NOTE[heldReason] ?? ''}` : (WARN_TEXT[level] ?? '');
   beeper.setLevel(level);
 }
 
@@ -192,6 +205,17 @@ function renderSys(gpsDesc) {
   const [gpsLevel, gpsText] = GPS_SYS[gpsDesc.kind] ?? ['ng', 'GPS 異常'];
   setSys('sysGps', gpsLevel, gpsText);
 
+  // 加速度センサー（動き出しの判定）
+  const MOTION_SYS = {
+    active: ['ok', '動き 有効'],
+    waiting: ['warn', '動き 待ち'],
+    denied: ['ng', '動き 未許可'],
+    unsupported: ['ng', '動き 非対応'],
+    idle: ['ng', '動き 停止'],
+  };
+  const [mLevel, mText] = MOTION_SYS[motion.status] ?? ['ng', '動き 停止'];
+  setSys('sysMotion', mLevel, mText);
+
   // 画面常時点灯
   if (wakeLock.status === 'active') setSys('sysWake', 'ok', '常時点灯 有効');
   else if (wakeLock.status === 'unsupported') setSys('sysWake', 'ng', '常時点灯 非対応');
@@ -262,6 +286,7 @@ $('startBtn').addEventListener('click', () => {
   beeper.unlock(); // 警告音を出せるようにし、確認の音を 1 回鳴らす
   wakeLock.request();
   gps.start();
+  motion.start().then(() => renderAll()); // iPhone では、ここで許可を求める
   startCamera();
   renderAll();
 });

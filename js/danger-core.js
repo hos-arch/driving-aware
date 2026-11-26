@@ -72,9 +72,11 @@ export function roughDistanceM(footY, vy, frameW, frameH, opts = {}) {
  * 停車中（standKmh 未満）は何も出さない。
  *
  * opts.crosswalk: 横断歩道が見えているとき true。通り道の幅（margin）を crosswalkWiden 倍にする。
+ * opts.starting: GPS では止まっているが、加速度センサーで動き出しを見つけたとき true。
+ *   呼ぶ側は speedKmh を null にして渡す（速さは分からない）。表示だけの「前方に人（動き出し）」になる。
  *
  * 戻り値: { level, targets: [{ ...person, level, seconds }], basis, reason, corridor, margin }
- *   reason: 'nospeed' | 'assumed' | 'slow' | null  「前方に人」にとどめた理由
+ *   reason: 'nospeed' | 'starting' | 'assumed' | 'slow' | null  「前方に人」にとどめた理由
  */
 export function assess(persons, lane, speedKmh, opts = {}) {
   const o = { ...DANGER_DEFAULTS, ...opts };
@@ -85,7 +87,7 @@ export function assess(persons, lane, speedKmh, opts = {}) {
   const H = lane.frameH;
   if (speedKmh != null && speedKmh < o.standKmh) return { level: LEVELS.NONE, targets: [], basis: c.basis, reason: null, corridor: c, margin: o.margin };
   let reason = null;
-  if (speedKmh == null) reason = 'nospeed';
+  if (speedKmh == null) reason = opts.starting ? 'starting' : 'nospeed';
   else if (c.basis === 'assumed') reason = 'assumed';
   else if (speedKmh < o.minSpeedKmh) reason = 'slow';
   const targets = [];

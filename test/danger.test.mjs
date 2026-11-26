@@ -103,3 +103,9 @@ test('assess: 横断歩道が見えているときは、通り道を 1.5 倍に�
   assert.notEqual(r.level, 'none');
   assert.ok(Math.abs(r.margin - D.margin * D.crosswalkWiden) < 1e-9);
 });
+
+test('assess: 加速度センサーで動き出しを見つけたとき（速さは不明）は、音なしの「前方に人（動き出し）」', () => {
+  const r = assess([person(320, 260)], lane, null, { starting: true });
+  assert.equal(r.level, LEVELS.NEAR);
+  assert.equal(r.reason, 'starting');
+});

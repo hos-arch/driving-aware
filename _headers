@@ -1,5 +1,5 @@
 /*
-  Permissions-Policy: camera=(self), geolocation=(self)
+  Permissions-Policy: camera=(self), geolocation=(self), accelerometer=(self), gyroscope=(self)
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   # 人の検出の計算を複数スレッドで行うために必要（外部のファイルは読み込んでいない）
